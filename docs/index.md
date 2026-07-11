@@ -2,7 +2,7 @@
 type: moc
 status: active
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-11
 tags:
   - docs
   - moc
@@ -32,7 +32,12 @@ This is the main Obsidian map of content for the project.
 ## Knowledge Base
 
 - [[knowledge/README|Knowledge Notes]]
+- [[knowledge/game-economy|Game Economy Design]]
+- [[knowledge/token-tracking|Token Tracking]]
 - [[decisions/README|Decisions]]
+- [[decisions/0001-tauri-stack|ADR-0001 Tauri Stack]]
+- [[decisions/0002-token-source-local-logs|ADR-0002 Token Source]]
+- [[decisions/0003-canvas-sprite-rendering|ADR-0003 Sprite Rendering]]
 
 ## Templates
 
