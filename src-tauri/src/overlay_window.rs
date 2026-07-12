@@ -5,6 +5,15 @@
 //! declared statically is *which monitor* to cover - this module resizes and
 //! repositions the overlay to the primary monitor's work area at startup.
 //!
+//! `tao`/`tauri`'s `Monitor` only reports the full display bounds, not the
+//! work area macOS carves out for the Dock and menu bar. If the overlay
+//! covers the full bounds, the frontend's "floor" (`groundY` in
+//! `ui/overlay/src/main.ts`) sits at the physical bottom edge of the screen,
+//! which is *underneath* the Dock in z-order (the Dock runs at a window
+//! level above ordinary app windows), so the pet visually walks behind it.
+//! On macOS we correct for this after the initial monitor-based placement by
+//! reading `NSScreen.visibleFrame`, which excludes the Dock and menu bar.
+//!
 //! Click-through hit-testing and dragging are *not* handled here: they're
 //! driven from the frontend (`ui/overlay/src/main.ts`) via
 //! `setIgnoreCursorEvents`/`startDragging`, called directly from mouse
@@ -60,5 +69,70 @@ pub fn fit_to_monitor(app: &AppHandle, monitor_index: u32, wayland_fallback: boo
     }
     if let Err(e) = window.set_position(PhysicalPosition::new(position.x, position.y)) {
         eprintln!("overlay_window: failed to set position: {e}");
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        match macos::visible_frame_physical(&window) {
+            Some((position, size)) => {
+                if let Err(e) = window.set_size(size) {
+                    eprintln!("overlay_window: failed to set macOS visible-frame size: {e}");
+                }
+                if let Err(e) = window.set_position(position) {
+                    eprintln!("overlay_window: failed to set macOS visible-frame position: {e}");
+                }
+            }
+            None => {
+                eprintln!(
+                    "overlay_window: could not read NSScreen.visibleFrame, \
+                     falling back to full monitor bounds (pet may render behind the Dock)"
+                );
+            }
+        }
+    }
+}
+
+/// macOS-only: resolves the overlay window's screen's visible frame (the
+/// monitor bounds minus the Dock and menu bar) into the physical, top-left,
+/// y-down pixel coordinates that `tauri`/`tao` expect for `set_position`.
+#[cfg(target_os = "macos")]
+mod macos {
+    use core_graphics::display::CGDisplay;
+    use std::ptr::NonNull;
+    use tauri::{PhysicalPosition, PhysicalSize, WebviewWindow};
+
+    pub(super) fn visible_frame_physical(
+        window: &WebviewWindow,
+    ) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+        let raw = window.ns_window().ok()?;
+        let ptr = NonNull::new(raw as *mut objc2_app_kit::NSWindow)?;
+        // SAFETY: `ns_window()` returns an autoreleased, valid `NSWindow*` for
+        // the lifetime of this call, matching tauri's own internal usage of
+        // this pointer (see `WebviewWindow::ns_window`).
+        let ns_window: &objc2_app_kit::NSWindow = unsafe { ptr.as_ref() };
+        let screen = ns_window.screen()?;
+
+        let visible = screen.visibleFrame();
+        let scale = screen.backingScaleFactor();
+
+        // `NSScreen` frames use Cocoa's bottom-left, y-up coordinate space
+        // shared across all displays, anchored at the primary display's
+        // origin. `tao`'s `bottom_left_to_top_left` conversion (used for its
+        // own window/monitor positioning) flips that into the top-left,
+        // y-down space `set_position` expects, using the main display's
+        // point height as the flip axis.
+        let main_height_points = CGDisplay::main().pixels_high() as f64;
+        let top_left_y = main_height_points - (visible.origin.y + visible.size.height);
+
+        let position = PhysicalPosition::new(
+            (visible.origin.x * scale).round() as i32,
+            (top_left_y * scale).round() as i32,
+        );
+        let size = PhysicalSize::new(
+            (visible.size.width * scale).round() as u32,
+            (visible.size.height * scale).round() as u32,
+        );
+
+        Some((position, size))
     }
 }

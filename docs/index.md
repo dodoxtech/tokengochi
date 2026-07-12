@@ -32,6 +32,7 @@ This is the main Obsidian map of content for the project.
 ## Knowledge Base
 
 - [[knowledge/README|Knowledge Notes]]
+- [[knowledge/code-map|Code Map: Pet Behavior, Movement, and Actions]]
 - [[knowledge/game-economy|Game Economy Design]]
 - [[knowledge/token-tracking|Token Tracking]]
 - [[decisions/README|Decisions]]

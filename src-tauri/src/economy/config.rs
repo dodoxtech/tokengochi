@@ -6,7 +6,8 @@ use tauri::Manager;
 /// `docs/knowledge/game-economy.md` §8 (Balance Reference).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EconomyConfig {
-    /// Weighted tokens required to earn one Food, before caps/escalation.
+    /// Weighted tokens required to earn one Food. Flat rate, no caps -
+    /// heavier usage always earns proportionally more Food.
     pub tokens_per_food: f64,
     /// Weight applied to output tokens.
     pub weight_output: f64,
@@ -22,14 +23,6 @@ pub struct EconomyConfig {
     /// Multiplier for models matching no `model_weights` key (and for
     /// events with no model recorded at all).
     pub model_weight_default: f64,
-    /// Food/day earned at full rate before diminishing returns kick in.
-    pub daily_soft_cap: u32,
-    /// Cost multiplier applied per Food beyond the soft cap (e.g. 1.5).
-    pub soft_cap_escalation: f64,
-    /// Absolute Food/day ceiling, regardless of tokens spent.
-    pub daily_hard_cap: u32,
-    /// Max Food banked in the Pantry for zero-usage days.
-    pub pantry_max: u32,
     /// Fullness gained per Food eaten.
     pub fullness_per_food: u32,
     /// Food/day the pet needs to hold fullness steady - decay is derived

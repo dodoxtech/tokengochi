@@ -23,3 +23,7 @@ Good knowledge notes include:
 
 Keep notes small and link them to related tasks, decisions, or architecture docs.
 
+Start with [[code-map|Code Map]] before touching pet movement, behavior AI,
+or any Tauri command — it indexes exactly which function in which file owns
+which piece of behavior, so you don't have to grep the whole tree.
+

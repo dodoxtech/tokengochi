@@ -1,4 +1,4 @@
-//! Weighted token -> Food conversion with daily soft/hard cap escalation.
+//! Weighted token -> Food conversion, flat rate, no caps.
 //!
 //! See `docs/knowledge/game-economy.md` §2 and §8.
 
@@ -32,26 +32,6 @@ pub fn weighted_tokens(event: &TokenEvent, config: &EconomyConfig) -> f64 {
     base * model_multiplier(&event.model, config)
 }
 
-/// Cost, in weighted tokens, of earning the `n`th Food of the day
-/// (1-indexed, continuing past the hard cap - see `state.rs` for what a
-/// Food earned past the hard cap actually does with it).
-///
-/// Flat at `tokens_per_food` for the first `daily_soft_cap` Food, then
-/// escalates geometrically by `soft_cap_escalation` per Food beyond that -
-/// e.g. with the reference constants (`tokens_per_food` = 20 000,
-/// `soft_cap_escalation` = 1.5), food #11 costs 30 000, #12 costs 45 000 -
-/// the same 1x / 1.5x / 2.25x progression as the illustrative 10 -> 15 ->
-/// 22.5 example in `docs/knowledge/game-economy.md` §2, just at the real
-/// token scale rather than the doc's simplified round numbers.
-pub fn cost_of_nth_food(n: u32, config: &EconomyConfig) -> f64 {
-    if n <= config.daily_soft_cap {
-        config.tokens_per_food
-    } else {
-        let steps_beyond_cap = (n - config.daily_soft_cap) as i32;
-        config.tokens_per_food * config.soft_cap_escalation.powi(steps_beyond_cap)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,10 +52,6 @@ mod tests {
             .into_iter()
             .collect(),
             model_weight_default: 1.0,
-            daily_soft_cap: 10,
-            soft_cap_escalation: 1.5,
-            daily_hard_cap: 20,
-            pantry_max: 5,
             fullness_per_food: 20,
             daily_food_need: 1.5,
             xp_per_food: 10,
@@ -142,30 +118,5 @@ mod tests {
         assert_eq!(sonnet, 250.0);
         assert_eq!(opus, 500.0);
         assert_eq!(haiku, 100.0);
-    }
-
-    #[test]
-    fn cost_flat_at_soft_cap_and_below() {
-        let config = test_config();
-        for n in 1..=10 {
-            assert_eq!(cost_of_nth_food(n, &config), 20_000.0, "n={n}");
-        }
-    }
-
-    #[test]
-    fn cost_escalates_geometrically_beyond_soft_cap() {
-        let config = test_config();
-        assert_eq!(cost_of_nth_food(11, &config), 30_000.0);
-        assert_eq!(cost_of_nth_food(12, &config), 45_000.0);
-        assert_eq!(cost_of_nth_food(13, &config), 67_500.0);
-    }
-
-    #[test]
-    fn changing_a_constant_changes_behavior_with_no_code_change() {
-        let mut config = test_config();
-        let base_cost = cost_of_nth_food(1, &config);
-        config.tokens_per_food = 40_000.0; // e.g. a balance-patch release
-        let new_cost = cost_of_nth_food(1, &config);
-        assert_eq!(new_cost, base_cost * 2.0);
     }
 }

@@ -14,7 +14,7 @@
 
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, cursorPosition } from "@tauri-apps/api/window";
 
 const appWindow = getCurrentWindow();
 
@@ -145,6 +145,7 @@ const MAX_THROW_SPEED = 1500; // px/s, hard cap so a throw can't leave the scree
 const TERMINAL_FALL_SPEED = 2200; // px/s
 const CLIMB_SPEED = 46; // px/s, deliberately slow per the design notes
 const DRAG_PROMOTE_PX = 6; // movement past this turns a click into a drag
+const HOVER_POLL_MS = 80; // OS-level cursor poll cadence while click-through is active
 const CLICK_COMBO_WINDOW_MS = 2000;
 const CLICK_COMBO_COUNT = 3;
 const PET_STROKE_MS = 1000;
@@ -180,7 +181,6 @@ interface PetStatePayload {
   equippedFoodSkin?: string | null;
   furniture: FurniturePlacement[];
   pendingFood: number;
-  pantry: number;
   foodEarnedToday: number;
   bankedTokensToday: number;
   tokensPerFood: number;
@@ -257,7 +257,6 @@ let state: PetStatePayload = {
   level: 0,
   furniture: [],
   pendingFood: 0,
-  pantry: 0,
   foodEarnedToday: 0,
   bankedTokensToday: 0,
   tokensPerFood: 20_000,
@@ -381,10 +380,9 @@ function spawnFood(id: string): void {
   const targetY = groundY() + PET_SIZE - FOOD_SIZE - 8;
   const minX = 32;
   const maxX = Math.max(minX, window.innerWidth - FOOD_SIZE - 32);
-  const existingOffset = foods.length * 28;
   foods.push({
     id,
-    x: clamp(minX + ((performance.now() / 7 + existingOffset) % (maxX - minX + 1)), minX, maxX),
+    x: clamp(minX + Math.random() * (maxX - minX), minX, maxX),
     y: -FOOD_SIZE,
     targetY,
     eaten: false,
@@ -424,6 +422,32 @@ function updateHitTest(clientX: number, clientY: number): void {
   }
   lastHit = hover;
   void appWindow.setIgnoreCursorEvents(!hover);
+}
+
+// While `setIgnoreCursorEvents(true)` is active (the idle/click-through
+// state), the OS routes every mouse event - including `mousemove` - straight
+// to whatever window is beneath the overlay, so this window never observes
+// the cursor re-entering the pet's hitbox and `updateHitTest` above can never
+// fire to turn click-through back off. `cursorPosition()` queries the OS
+// cursor position directly (independent of window mouse-event routing), so
+// polling it here breaks that chicken-and-egg deadlock. Once hover flips on
+// and click-through is disabled, normal DOM mouse events take back over.
+let cursorPollInFlight = false;
+
+function pollCursorForHover(): void {
+  if (hover || cursorPollInFlight) {
+    return;
+  }
+  cursorPollInFlight = true;
+  void cursorPosition()
+    .then((position) => {
+      const localX = position.x / dpr - windowOffsetX;
+      const localY = position.y / dpr - windowOffsetY;
+      updateHitTest(localX, localY);
+    })
+    .finally(() => {
+      cursorPollInFlight = false;
+    });
 }
 
 function updateFood(dtMs: number): void {
@@ -650,6 +674,15 @@ function updatePet(dtMs: number, now: number): void {
 
   maybeTriggerPetting(now);
 
+  if (pet.supportId !== "floor") {
+    // Food and the bed only ever sit at floor level, so a pet perched on a
+    // window ledge has to fall back down before it can walk to either one -
+    // otherwise seek/eat only ever compared x and let the pet "eat" from
+    // mid-air at ledge height.
+    beginDrop(now, 0, 0);
+    return;
+  }
+
   const target = foods.find((food) => !food.eaten && food.y >= food.targetY);
   if (!target) {
     if (now < pet.happyUntil) {
@@ -752,7 +785,9 @@ function drawPet(now: number): void {
   if (spin !== 0) {
     ctx.rotate(spin);
   }
-  ctx.scale(pet.facing, 1);
+  // Sprite art is authored left-facing by default, so scale(1,1) draws it facing left;
+  // pet.facing is +1 for rightward movement, so invert it to mirror correctly.
+  ctx.scale(-pet.facing, 1);
   if (landingSquash > 0) {
     // Brief squash-on-landing: wider and flatter for one short beat.
     ctx.scale(1 + landingSquash * 0.22, 1 - landingSquash * 0.3);
@@ -1118,6 +1153,7 @@ pet.y = groundY();
 draw(performance.now());
 requestAnimationFrame(tick);
 void appWindow.setIgnoreCursorEvents(true);
+setInterval(pollCursorForHover, HOVER_POLL_MS);
 
 void invoke<PetStatePayload>("get_pet_state").then((initialState) => {
   state = initialState;

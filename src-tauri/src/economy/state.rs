@@ -14,7 +14,7 @@
 //! shifts wall-clock *labels*, not the number of seconds that actually
 //! passed.
 
-use super::conversion::{cost_of_nth_food, weighted_tokens};
+use super::conversion::weighted_tokens;
 use super::fullness::{mood_from_fullness, mood_multiplier};
 use super::{level_for_xp, EconomyConfig};
 use crate::pet::{
@@ -29,15 +29,9 @@ use std::collections::BTreeMap;
 /// for observability/testing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConversionOutcome {
-    /// Whole Food added to today's inventory (subject to the daily hard cap).
+    /// Whole Food added to today's inventory. No cap - every
+    /// `tokens_per_food` weighted tokens earns one, however many that is.
     pub food_earned: u32,
-    /// Whole Food that overflowed into the Pantry instead (hard cap already
-    /// reached today, Pantry had room).
-    pub food_to_pantry: u32,
-    /// Weighted tokens discarded because both the hard cap and the Pantry
-    /// were full - see `docs/knowledge/game-economy.md` §2/§7 ("token
-    /// burning strictly irrational" past this point).
-    pub tokens_wasted: f64,
 }
 
 /// The economy engine's mutable state for one pet.
@@ -47,13 +41,11 @@ pub struct EconomyState {
     pub current_day: NaiveDate,
     pub food_earned_today: u32,
     pub food_earned_by_day: BTreeMap<String, u32>,
-    /// Weighted tokens banked toward the next Food, at the current cost
-    /// tier; resets to 0 at each day boundary (unspent tokens don't carry
-    /// across days - only whole Food/Pantry stock does).
+    /// Weighted tokens banked toward the next Food; resets to 0 at each day
+    /// boundary (unspent tokens don't carry across days - only whole Food
+    /// inventory does).
     pub banked_tokens_today: f64,
     pub banked_tokens_by_day: BTreeMap<String, f64>,
-    /// Persists across days; capped at `config.pantry_max`.
-    pub pantry: u32,
     /// Food earned but not yet eaten. Eating (fullness/XP effects) is
     /// triggered separately - see [`EconomyState::eat_from_inventory`].
     pub food_inventory: u32,
@@ -152,7 +144,6 @@ impl EconomyState {
             food_earned_by_day: BTreeMap::new(),
             banked_tokens_today: 0.0,
             banked_tokens_by_day: BTreeMap::new(),
-            pantry: 0,
             food_inventory: 0,
             fullness: 100.0,
             xp: 0.0,
@@ -281,10 +272,10 @@ impl EconomyState {
         Ok(())
     }
 
-    /// Applies one token usage event: converts weighted tokens to Food,
-    /// respecting the soft/hard cap escalation and Pantry overflow. Callers
-    /// should call [`EconomyState::reconcile_elapsed_time`] first if real
-    /// time has passed, so `current_day` reflects the event's day.
+    /// Applies one token usage event: converts weighted tokens to Food at a
+    /// flat rate, no cap. Callers should call
+    /// [`EconomyState::reconcile_elapsed_time`] first if real time has
+    /// passed, so `current_day` reflects the event's day.
     pub fn apply_token_event(
         &mut self,
         event: &TokenEvent,
@@ -319,50 +310,12 @@ impl EconomyState {
 
         banked_tokens += weighted_tokens(event, config);
 
-        let mut outcome = ConversionOutcome {
-            food_earned: 0,
-            food_to_pantry: 0,
-            tokens_wasted: 0.0,
-        };
-
-        loop {
-            let today_count_so_far = food_earned_for_day + outcome.food_earned;
-            let under_hard_cap = today_count_so_far < config.daily_hard_cap;
-            let pantry_has_room = self.pantry + outcome.food_to_pantry < config.pantry_max;
-
-            // Check "is there anywhere for tokens to go" *before* checking
-            // affordability. The escalating cost of the next food can
-            // easily exceed whatever's left banked, which would otherwise
-            // make the loop exit via the affordability check below without
-            // ever noticing both the hard cap and the Pantry are already
-            // full - silently leaving leftover tokens sitting in
-            // `banked_tokens_today` instead of correctly discarding them
-            // (docs/knowledge/game-economy.md §2/§7: once both are full,
-            // nothing more can happen with today's tokens, regardless of
-            // amount).
-            if !under_hard_cap && !pantry_has_room {
-                outcome.tokens_wasted += banked_tokens;
-                banked_tokens = 0.0;
-                break;
-            }
-
-            let next_food_index = today_count_so_far + outcome.food_to_pantry + 1;
-            let cost = cost_of_nth_food(next_food_index, config);
-
-            if banked_tokens < cost {
-                // Not enough for the next food yet, but there's still a
-                // valid destination for it - carry it over as progress
-                // toward the next event (or tomorrow, once the day rolls).
-                break;
-            }
-
-            banked_tokens -= cost;
-            if under_hard_cap {
-                outcome.food_earned += 1;
-            } else {
-                outcome.food_to_pantry += 1;
-            }
-        }
+        // Flat, uncapped conversion: every `tokens_per_food` weighted tokens
+        // earns one Food, however many that is. Leftover tokens carry over
+        // as progress toward the next Food.
+        let food_earned = (banked_tokens / config.tokens_per_food).floor() as u32;
+        banked_tokens -= food_earned as f64 * config.tokens_per_food;
+        let outcome = ConversionOutcome { food_earned };
 
         food_earned_for_day += outcome.food_earned;
         if event_day == self.current_day {
@@ -373,7 +326,6 @@ impl EconomyState {
                 .insert(day_key.clone(), food_earned_for_day);
             self.banked_tokens_by_day.insert(day_key, banked_tokens);
         }
-        self.pantry = (self.pantry + outcome.food_to_pantry).min(config.pantry_max);
         self.food_inventory += outcome.food_earned;
         if outcome.food_earned > 0 {
             if event_day >= self.last_activity_day.unwrap_or(event_day) {
@@ -444,9 +396,8 @@ impl EconomyState {
 
     /// Call on app launch (and periodically while running) with the current
     /// wall-clock unix time and local calendar date. Applies fullness decay
-    /// proportional to real elapsed seconds and rolls day boundaries
-    /// (Pantry auto-feed) for any days that passed while the app was
-    /// closed.
+    /// proportional to real elapsed seconds and rolls day boundaries for any
+    /// days that passed while the app was closed.
     pub fn reconcile_elapsed_time(
         &mut self,
         now_unix: i64,
@@ -458,22 +409,18 @@ impl EconomyState {
         self.fullness = (self.fullness - decay).max(0.0);
         self.last_reconciled_unix = now_unix;
 
-        self.roll_day_if_needed(today, config);
+        self.roll_day_if_needed(today);
     }
 
-    /// Advances `current_day` to `today`, one day at a time, applying
-    /// Pantry auto-feed for each zero-usage day passed along the way. A
-    /// no-op if `today` is not after `current_day`.
-    fn roll_day_if_needed(&mut self, today: NaiveDate, config: &EconomyConfig) {
+    /// Advances `current_day` to `today`, one day at a time. A no-op if
+    /// `today` is not after `current_day`.
+    fn roll_day_if_needed(&mut self, today: NaiveDate) {
         if today <= self.current_day {
             return;
         }
 
         let days_to_advance = (today - self.current_day).num_days().max(0);
         for _ in 0..days_to_advance {
-            if self.food_earned_today == 0 && self.pantry > 0 {
-                self.auto_feed_from_pantry(config);
-            }
             self.food_earned_by_day
                 .insert(self.current_day.to_string(), self.food_earned_today);
             self.food_earned_today = 0;
@@ -489,19 +436,9 @@ impl EconomyState {
         }
     }
 
-    fn auto_feed_from_pantry(&mut self, config: &EconomyConfig) {
-        if self.pantry == 0 {
-            return;
-        }
-        self.pantry -= 1;
-        self.record_activity_day(self.current_day);
-        self.eat_one_food(config);
-        self.check_evolution(config);
-    }
-
-    /// Shared fullness/XP math for "the pet ate one Food," regardless of
-    /// whether it came from `food_inventory` or an auto-feed from the
-    /// Pantry. Mood is evaluated from fullness *before* this meal.
+    /// Shared fullness/XP math for "the pet ate one Food," called from
+    /// `eat_from_inventory`. Mood is evaluated from fullness *before* this
+    /// meal.
     fn eat_one_food(&mut self, config: &EconomyConfig) {
         let mood = mood_from_fullness(self.fullness);
         let xp_gain = config.xp_per_food as f64 * mood_multiplier(mood) * self.xp_bonus_multiplier;
@@ -687,10 +624,6 @@ mod tests {
             .into_iter()
             .collect(),
             model_weight_default: 1.0,
-            daily_soft_cap: 10,
-            soft_cap_escalation: 1.5,
-            daily_hard_cap: 20,
-            pantry_max: 5,
             fullness_per_food: 20,
             daily_food_need: 1.5,
             xp_per_food: 10,
@@ -704,11 +637,8 @@ mod tests {
     }
 
     fn huge_event(id: &str) -> TokenEvent {
-        // 30,000,000 weighted tokens - well past the ~26.4M needed to reach
-        // the hard cap (20 food) *and* fully fill the Pantry (5 more food)
-        // given the geometric escalation, with some left over to be wasted.
-        // (Escalation compounds fast: reaching the hard cap alone costs
-        // ~3.6M weighted tokens; the 21st food alone costs ~1.7M more.)
+        // 30,000,000 weighted tokens - at 20,000 tokens/Food, flat rate,
+        // this earns exactly 1,500 Food with nothing left over to bank.
         TokenEvent {
             provider: "claude_code".to_string(),
             message_id: id.to_string(),
@@ -735,10 +665,7 @@ mod tests {
     }
 
     fn event_for_food_count(id: &str, food_count: u32, config: &EconomyConfig) -> TokenEvent {
-        let tokens = (1..=food_count)
-            .map(|index| cost_of_nth_food(index, config))
-            .sum::<f64>()
-            .ceil() as u64;
+        let tokens = (food_count as f64 * config.tokens_per_food).ceil() as u64;
         small_event(id, tokens)
     }
 
@@ -765,61 +692,17 @@ mod tests {
     }
 
     #[test]
-    fn hard_cap_stops_daily_food_and_overflow_goes_to_pantry_then_is_wasted() {
+    fn heavy_usage_earns_proportional_food_with_no_daily_cap() {
         let config = test_config();
         let mut state = EconomyState::new(day(2026, 1, 1), 0);
         let outcome = state.apply_token_event(&huge_event("m1"), &config);
 
-        assert_eq!(state.food_earned_today, config.daily_hard_cap);
-        assert_eq!(outcome.food_earned, config.daily_hard_cap);
-        assert_eq!(state.pantry, config.pantry_max);
-        assert_eq!(outcome.food_to_pantry, config.pantry_max);
-        // A 5,000,000-output-token event is far more than even the hard
-        // cap + full pantry can absorb - something must be wasted.
-        assert!(outcome.tokens_wasted > 0.0);
-        // food_inventory only reflects the day's hard-cap-bound food, not
-        // Pantry stock.
-        assert_eq!(state.food_inventory, config.daily_hard_cap);
-    }
-
-    #[test]
-    fn zero_usage_day_triggers_pantry_auto_feed() {
-        let config = test_config();
-        let mut state = EconomyState::new(day(2026, 1, 1), 0);
-        // Day 1: heavy usage, fills the pantry (and hits the hard cap, so
-        // day 1 itself is *not* a zero-usage day - no auto-feed for it).
-        state.apply_token_event(&huge_event("m1"), &config);
-        assert_eq!(state.pantry, config.pantry_max);
-
-        let xp_before = state.xp;
-
-        // Jump straight from day 1 to day 3, with no events recorded on day
-        // 2 in between - day 2 is therefore a zero-usage day, and rolling
-        // past it should fire exactly one Pantry auto-feed.
-        state.reconcile_elapsed_time(2 * 86_400, day(2026, 1, 3), &config);
-
-        assert_eq!(
-            state.pantry,
-            config.pantry_max - 1,
-            "exactly one auto-feed for day 2 (day 1 had usage, so it doesn't auto-feed)"
-        );
-        assert!(
-            state.xp > xp_before,
-            "auto-feed should grant XP same as any other meal"
-        );
-    }
-
-    #[test]
-    fn nonzero_usage_day_does_not_trigger_pantry_auto_feed() {
-        let config = test_config();
-        let mut state = EconomyState::new(day(2026, 1, 1), 0);
-        state.apply_token_event(&small_event("m1", 20_000), &config); // 1 food earned today
-        state.pantry = 3; // pretend the pantry already has stock from a prior overflow
-
-        state.reconcile_elapsed_time(86_400, day(2026, 1, 2), &config);
-
-        // Day 1 had usage (1 food earned), so no auto-feed for day 1.
-        assert_eq!(state.pantry, 3);
+        // 30,000,000 weighted tokens / 20,000 tokens-per-food = 1,500 Food,
+        // no hard cap and no Pantry to divert any of it into.
+        assert_eq!(outcome.food_earned, 1_500);
+        assert_eq!(state.food_earned_today, 1_500);
+        assert_eq!(state.food_inventory, 1_500);
+        assert_eq!(state.banked_tokens_today, 0.0);
     }
 
     #[test]
@@ -827,7 +710,7 @@ mod tests {
         let config = test_config();
         let mut state = EconomyState::new(day(2026, 1, 1), 0);
 
-        // 2 days closed, no pantry stock -> pure decay, no auto-feed noise.
+        // 2 days closed -> pure decay, nothing else to observe.
         state.reconcile_elapsed_time(2 * 86_400, day(2026, 1, 3), &config);
         assert_eq!(
             state.fullness,
@@ -934,8 +817,8 @@ mod tests {
             let current_day = start + chrono::Duration::days(offset);
             state.reconcile_elapsed_time(offset * 86_400, current_day, &config);
 
-            // One missed day: no Pantry stock in this simulation, so the
-            // following active day must spend a streak freeze.
+            // One missed day: the following active day must spend a streak
+            // freeze.
             if offset == 14 {
                 continue;
             }
@@ -952,7 +835,6 @@ mod tests {
                 &config,
             );
             assert_eq!(outcome.food_earned, 20);
-            assert_eq!(outcome.food_to_pantry, 0);
 
             while state.eat_from_inventory(&config) {}
         }
@@ -1035,10 +917,10 @@ mod tests {
     }
 
     #[test]
-    fn delayed_provider_usage_uses_caps_for_the_day_it_occurred() {
+    fn delayed_provider_usage_is_bucketed_under_the_day_it_occurred() {
         let config = test_config();
         let mut state = EconomyState::new(day(2026, 1, 2), 86_400);
-        state.food_earned_today = config.daily_hard_cap;
+        state.food_earned_today = 30; // today's own tally, untouched below
 
         let delayed_day = day(2026, 1, 1);
         let outcome = state.apply_token_event_on_day(
@@ -1049,8 +931,8 @@ mod tests {
 
         assert_eq!(outcome.food_earned, 2);
         assert_eq!(
-            state.food_earned_today, config.daily_hard_cap,
-            "today's exhausted cap must not block a delayed prior-day event"
+            state.food_earned_today, 30,
+            "a delayed prior-day event must not touch today's own tally"
         );
         assert_eq!(
             state

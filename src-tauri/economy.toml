@@ -2,7 +2,8 @@
 # Loaded at runtime (bundled as a Tauri resource) so tuning never requires a
 # code change - only a new release.
 
-# Weighted tokens required to earn one Food, before caps/escalation.
+# Weighted tokens required to earn one Food. Flat rate, no caps - heavier
+# usage always earns proportionally more Food.
 tokens_per_food = 20000.0
 
 # Token weighting: reward real effort, not raw count.
@@ -13,17 +14,6 @@ weight_cache_read = 0.05
 # Multiplier for models matching no [model_weights] key below (and for
 # events with no model recorded, e.g. manual mode).
 model_weight_default = 1.0
-
-# Daily soft cap: first N Food/day at full rate, then each subsequent Food
-# costs `soft_cap_escalation` times more tokens (10 -> 15 -> 22.5 ...).
-daily_soft_cap = 10
-soft_cap_escalation = 1.5
-
-# Absolute Food/day ceiling regardless of tokens spent.
-daily_hard_cap = 20
-
-# Max Food banked in the Pantry, auto-fed on zero-usage days.
-pantry_max = 5
 
 # Fullness gained per Food eaten.
 fullness_per_food = 20

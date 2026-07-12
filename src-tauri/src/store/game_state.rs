@@ -77,7 +77,7 @@ impl GameStateStore {
                 food_earned_by_day_json TEXT NOT NULL DEFAULT '',
                 banked_tokens_today   REAL NOT NULL,
                 banked_tokens_by_day_json TEXT NOT NULL DEFAULT '',
-                pantry                INTEGER NOT NULL,
+                pantry                INTEGER NOT NULL DEFAULT 0,
                 food_inventory        INTEGER NOT NULL,
                 fullness              REAL NOT NULL,
                 xp                    REAL NOT NULL,
@@ -139,7 +139,7 @@ impl GameStateStore {
         self.conn
             .query_row(
                 "SELECT current_day, food_earned_today, food_earned_by_day_json,
-                        banked_tokens_today, banked_tokens_by_day_json, pantry,
+                        banked_tokens_today, banked_tokens_by_day_json,
                         food_inventory, fullness, xp, sparks, streak_days, streak_freezes,
                         last_activity_day, weekly_food_earned, weekly_target,
                         weekly_milestone_claimed, daily_quest_json, usage_stats_json,
@@ -161,23 +161,23 @@ impl GameStateStore {
                             )
                         })?;
 
-                    let last_activity_raw: Option<String> = row.get(12)?;
+                    let last_activity_raw: Option<String> = row.get(11)?;
                     let last_activity_day = last_activity_raw
                         .as_deref()
-                        .map(|raw| parse_date_column(raw, 12))
+                        .map(|raw| parse_date_column(raw, 11))
                         .transpose()?;
                     let food_earned_by_day_raw: String = row.get(2)?;
                     let banked_tokens_by_day_raw: String = row.get(4)?;
-                    let daily_quest_raw: String = row.get(16)?;
-                    let usage_stats_raw: String = row.get(17)?;
-                    let providers_by_day_raw: String = row.get(18)?;
-                    let evolution_stage_raw: String = row.get(19)?;
-                    let evolution_branch_raw: String = row.get(20)?;
-                    let album_raw: String = row.get(21)?;
-                    let album_records_raw: String = row.get(22)?;
-                    let owned_items_raw: String = row.get(23)?;
-                    let furniture_raw: String = row.get(26)?;
-                    let pending_evolution_raw: Option<String> = row.get(29)?;
+                    let daily_quest_raw: String = row.get(15)?;
+                    let usage_stats_raw: String = row.get(16)?;
+                    let providers_by_day_raw: String = row.get(17)?;
+                    let evolution_stage_raw: String = row.get(18)?;
+                    let evolution_branch_raw: String = row.get(19)?;
+                    let album_raw: String = row.get(20)?;
+                    let album_records_raw: String = row.get(21)?;
+                    let owned_items_raw: String = row.get(22)?;
+                    let furniture_raw: String = row.get(25)?;
+                    let pending_evolution_raw: Option<String> = row.get(28)?;
 
                     Ok(EconomyState {
                         current_day,
@@ -191,17 +191,16 @@ impl GameStateStore {
                             &banked_tokens_by_day_raw,
                             std::collections::BTreeMap::<String, f64>::new,
                         ),
-                        pantry: row.get::<_, i64>(5)? as u32,
-                        food_inventory: row.get::<_, i64>(6)? as u32,
-                        fullness: row.get(7)?,
-                        xp: row.get(8)?,
-                        sparks: row.get::<_, i64>(9)? as u32,
-                        streak_days: row.get::<_, i64>(10)? as u32,
-                        streak_freezes: row.get::<_, i64>(11)? as u32,
+                        food_inventory: row.get::<_, i64>(5)? as u32,
+                        fullness: row.get(6)?,
+                        xp: row.get(7)?,
+                        sparks: row.get::<_, i64>(8)? as u32,
+                        streak_days: row.get::<_, i64>(9)? as u32,
+                        streak_freezes: row.get::<_, i64>(10)? as u32,
                         last_activity_day,
-                        weekly_food_earned: row.get::<_, i64>(13)? as u32,
-                        weekly_target: row.get::<_, i64>(14)? as u32,
-                        weekly_milestone_claimed: row.get::<_, i64>(15)? != 0,
+                        weekly_food_earned: row.get::<_, i64>(12)? as u32,
+                        weekly_target: row.get::<_, i64>(13)? as u32,
+                        weekly_milestone_claimed: row.get::<_, i64>(14)? != 0,
                         daily_quest: json_or_default(&daily_quest_raw, || {
                             DailyQuestState::for_day(current_day)
                         }),
@@ -228,21 +227,21 @@ impl GameStateStore {
                                 branch: EvolutionBranch::Sprout,
                                 reached_day: current_day.to_string(),
                                 level: 0,
-                                xp: row.get(8).unwrap_or(0.0),
-                                sparks: row.get::<_, i64>(9).unwrap_or(0) as u32,
-                                prestige_count: row.get::<_, i64>(27).unwrap_or(0) as u32,
+                                xp: row.get(7).unwrap_or(0.0),
+                                sparks: row.get::<_, i64>(8).unwrap_or(0) as u32,
+                                prestige_count: row.get::<_, i64>(26).unwrap_or(0) as u32,
                             }]
                         }),
                         owned_items: json_or_default(&owned_items_raw, Vec::<String>::new),
-                        equipped_cosmetic: row.get(24)?,
-                        equipped_food_skin: row.get(25)?,
+                        equipped_cosmetic: row.get(23)?,
+                        equipped_food_skin: row.get(24)?,
                         furniture: json_or_default(&furniture_raw, Vec::<FurniturePlacement>::new),
-                        prestige_count: row.get::<_, i64>(27)? as u32,
-                        xp_bonus_multiplier: row.get(28)?,
+                        prestige_count: row.get::<_, i64>(26)? as u32,
+                        xp_bonus_multiplier: row.get(27)?,
                         pending_evolution: pending_evolution_raw
                             .as_deref()
                             .and_then(|raw| serde_json::from_str::<EvolutionEvent>(raw).ok()),
-                        last_reconciled_unix: row.get(30)?,
+                        last_reconciled_unix: row.get(29)?,
                     })
                 },
             )
@@ -250,6 +249,10 @@ impl GameStateStore {
     }
 
     pub fn save_economy_state(&self, state: &EconomyState, now_unix: i64) -> rusqlite::Result<()> {
+        // `pantry` is a retired column (see task 0004 follow-up: unlimited
+        // food, no caps) - always written as 0 rather than dropped, so
+        // installs on the pre-migration schema (NOT NULL, no default) keep
+        // working without a destructive column drop.
         self.conn.execute(
             "INSERT INTO economy_state (
                 id, current_day, food_earned_today, food_earned_by_day_json,
@@ -304,7 +307,7 @@ impl GameStateStore {
                 serde_json::to_string(&state.food_earned_by_day).unwrap_or_default(),
                 state.banked_tokens_today,
                 serde_json::to_string(&state.banked_tokens_by_day).unwrap_or_default(),
-                state.pantry as i64,
+                0_i64, // pantry, retired
                 state.food_inventory as i64,
                 state.fullness,
                 state.xp,

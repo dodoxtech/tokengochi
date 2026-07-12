@@ -30,7 +30,6 @@
     prestigeCount: number;
     xpBonusMultiplier: number;
     pendingFood: number;
-    pantry: number;
     foodEarnedToday: number;
     bankedTokensToday: number;
     tokensPerFood: number;
@@ -293,9 +292,9 @@
           <small>{formatNumber(dashboard.stats.weekTokens.cacheRead)} cache</small>
         </article>
         <article>
-          <span>Pantry</span>
-          <strong>{dashboard.pet.pantry}</strong>
-          <small>{dashboard.pet.pendingFood} waiting</small>
+          <span>Pending Food</span>
+          <strong>{dashboard.pet.pendingFood}</strong>
+          <small>waiting to be eaten</small>
         </article>
         <article>
           <span>Sparks</span>

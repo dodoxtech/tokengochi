@@ -13,7 +13,9 @@ owner: AI agent
 
 # Game Economy Design
 
-Design goals: reward *consistency* over *volume*, keep the pet emotionally sticky for months, and never incentivize burning tokens for the game's sake. Related: [[../product|Product Context]], [[token-tracking|Token Tracking]].
+Design goals: reward *consistency* over *volume* and keep the pet emotionally sticky for months. Related: [[../product|Product Context]], [[token-tracking|Token Tracking]].
+
+> **2026-07-12 update:** Food earning is now uncapped ([[../decisions/0005-remove-food-earning-caps|decision 0005]]) — every `tokens_per_food` weighted tokens earns one Food, no daily ceiling, no Pantry. The "never incentivize burning tokens for the game's sake" goal from the original design and §7 below no longer hold; kept in this doc as historical context.
 
 ## 1. Currencies and Resources
 
@@ -30,9 +32,8 @@ Design goals: reward *consistency* over *volume*, keep the pet emotionally stick
 - Base rate: **1 Food per 20k tokens** (tunable constant `TOKENS_PER_FOOD`).
 - Token weighting to reflect real effort, not raw count: output tokens ×1.0, input tokens ×0.25, cache-read tokens ×0.05. Prevents cache-heavy sessions from flooding food.
 - **Per-model tier multipliers:** tokens from bigger (pricier) models are worth more Food. The whole event's weighted total is scaled by a tier multiplier looked up from `[model_weights]` in `economy.toml` — keys are case-insensitive *substrings* of the model id (`"opus"` matches `"claude-opus-4-8"`), checked in sorted key order, first match wins; unknown or missing model ids use `model_weight_default` (×1.0). Initial tiers: Opus ×2.0, Sonnet ×1.0, Haiku ×0.4.
-- **Daily soft cap with diminishing returns:** first 10 Food/day at full rate, then each subsequent Food costs ×1.5 more tokens (10 → 15 → 22.5…). Hard cap 20 Food/day. This is the core anti-"burn tokens to feed pet" mechanism.
-- Overflow tokens beyond the hard cap trickle into a **Pantry** (max 5 stored Food) that auto-feeds the pet on days with zero usage — smooths weekends and protects streak-adjacent mechanics.
-  - **Implementation decision (task 0004, `src-tauri/src/economy/state.rs`):** this doc didn't pin an exact conversion rate for Pantry-bound overflow, so the engine continues the *same* geometric escalation curve past the hard cap for Pantry food too (food #21 costs the same as the formula predicts, etc.), rather than a flat/discounted rate. Once the Pantry is also full (5/5), any further tokens that day are discarded entirely — reinforcing "token-burning is irrational" (§7) rather than finding a third bucket to put them in.
+- **No cap, flat rate ([[../decisions/0005-remove-food-earning-caps|decision 0005]]):** every `tokens_per_food` weighted tokens earns exactly one Food, with no diminishing returns and no daily ceiling — heavier usage always earns proportionally more Food. Leftover tokens below one Food's cost carry over as banked progress toward the next.
+  - *Superseded:* this section previously specified a 10-Food/day soft cap escalating ×1.5 per Food beyond it, a 20-Food/day hard cap, and a 5-Food Pantry that absorbed hard-cap overflow and auto-fed the pet on zero-usage days. Real usage routinely blew past the cap within a single active coding day, which read as the pet "not working" rather than "capped" — removed rather than raised. See [[../decisions/0005-remove-food-earning-caps|decision 0005]] for the tradeoffs this gives up (no anti-farming mechanism, no away-from-keyboard auto-feed).
 
 ## 3. Hunger and Mood (retention without guilt)
 
@@ -54,7 +55,7 @@ Design goals: reward *consistency* over *volume*, keep the pet emotionally stick
 
 ## 5. Streaks, Quests, and Events
 
-- **Streak:** any real usage day (≥1 Food earned or Pantry auto-feed) continues the streak. Rewards: Sparks at 3/7/14/30/100 days; 1 free "streak freeze" earned per 7-day streak (max 2 banked). Forgiving by design.
+- **Streak:** any real usage day (≥1 Food earned) continues the streak. Rewards: Sparks at 3/7/14/30/100 days; 1 free "streak freeze" earned per 7-day streak (max 2 banked). Forgiving by design.
 - **Daily quest (1/day, auto-detected, no UI burden):** e.g., "earn 3 Food", "feed the pet before noon". Reward: 1–2 Sparks.
 - **Weekly milestone:** cumulative weekly Food target scaled to the user's trailing 4-week average (personalized, so heavy users aren't bored and light users aren't excluded).
 - **Seasonal events (v2):** limited-time food skins and one event evolution form per season.
@@ -68,19 +69,16 @@ Design goals: reward *consistency* over *volume*, keep the pet emotionally stick
 
 ## 7. Anti-Abuse and Economy Health
 
-- Diminishing returns + hard daily cap (see §2) make token-burning strictly irrational past ~200k weighted tokens/day.
+- *Superseded by [[../decisions/0005-remove-food-earning-caps|decision 0005]]:* this section previously relied on diminishing returns + a hard daily cap to make token-burning irrational past ~200k weighted tokens/day. There is currently no cap-based anti-farming mechanism — Food earning is a flat, uncapped rate (§2).
 - Manual/demo mode earns Food at ×0.25 rate and cannot progress past Juvenile — keeps real usage as the true engine.
 - All balance constants live in one versioned config (`economy.toml`) so tuning never requires code changes; telemetry stays local (no server), tuning is done via releases.
 
 ## 8. Balance Reference (initial constants)
 
 ```
-TOKENS_PER_FOOD        = 20_000 (weighted)
+TOKENS_PER_FOOD        = 20_000 (weighted, flat rate, no cap)
 WEIGHTS                = out 1.0 / in 0.25 / cache_read 0.05
 MODEL_WEIGHTS          = opus ×2.0 / sonnet ×1.0 / haiku ×0.4, default ×1.0
-DAILY_SOFT_CAP         = 10 food, then ×1.5 escalation
-DAILY_HARD_CAP         = 20 food
-PANTRY_MAX             = 5 food
 FULLNESS_PER_FOOD      = +20
 DAILY_FOOD_NEED        = 1.5 food/day (decay derived: 1.5 × 20 = 30 / 24h)
 XP_PER_FOOD            = 10 × mood multiplier (Starving = ×0)
