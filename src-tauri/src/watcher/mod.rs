@@ -9,10 +9,12 @@
 #![allow(dead_code, unused_imports)]
 
 mod claude_code;
+mod codex_cli;
 mod manual;
 mod openai;
 
 pub use claude_code::ClaudeCodeProvider;
+pub use codex_cli::CodexCliProvider;
 pub use manual::ManualProvider;
 pub use openai::OpenAiProvider;
 

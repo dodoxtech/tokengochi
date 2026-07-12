@@ -20,7 +20,7 @@ use std::sync::{
 use store::{AppSettings, FoodStats, GameStateStore, Ledger, TokenTotals};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt;
-use watcher::{ClaudeCodeProvider, TokenEvent, TokenProvider};
+use watcher::{ClaudeCodeProvider, CodexCliProvider, OpenAiProvider, TokenEvent, TokenProvider};
 
 /// Managed state holding the economy balance constants loaded from
 /// `economy.toml` at startup. Named distinctly from `economy::EconomyState`
@@ -83,6 +83,8 @@ struct FoodSpawnedPayload {
 #[serde(rename_all = "camelCase")]
 struct ProviderStatusPayload {
     claude_code_detected: bool,
+    codex_cli_detected: bool,
+    openai_key_configured: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -229,6 +231,16 @@ fn set_autostart(enabled: bool, app: AppHandle) -> Result<bool, String> {
     }
     .map_err(|err| err.to_string())?;
     manager.is_enabled().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn set_openai_api_key(api_key: String) -> Result<(), String> {
+    OpenAiProvider::set_api_key(api_key.trim()).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn clear_openai_api_key() -> Result<(), String> {
+    OpenAiProvider::clear_api_key().map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -423,6 +435,8 @@ fn dashboard_payload(app: &AppHandle, runtime: &GameRuntime) -> Result<Dashboard
         settings: runtime.settings.clone(),
         providers: ProviderStatusPayload {
             claude_code_detected: ClaudeCodeProvider::default().detect(),
+            codex_cli_detected: CodexCliProvider::default().detect(),
+            openai_key_configured: OpenAiProvider::has_api_key(),
         },
         stats: StatsPayload {
             food,
@@ -496,7 +510,7 @@ fn apply_token_event(
     let mut runtime = shared
         .lock()
         .map_err(|_| "game runtime mutex poisoned".to_string())?;
-    if !runtime.settings.claude_code_enabled {
+    if !provider_enabled(&runtime.settings, &event.provider) {
         return Ok(());
     }
     reconcile_and_persist(&mut runtime).map_err(|err| err.to_string())?;
@@ -510,10 +524,19 @@ fn apply_token_event(
     }
 
     let config = runtime.config.clone();
-    runtime
+    let event_day = Local
+        .timestamp_opt(event.timestamp, 0)
+        .single()
+        .map(|dt| dt.date_naive())
+        .unwrap_or_else(|| Local::now().date_naive());
+    runtime.economy.record_provider_usage_on_day(
+        &event.provider,
+        usage_sample_from_event(event),
+        event_day,
+    );
+    let outcome = runtime
         .economy
-        .record_usage_pattern(usage_sample_from_event(event));
-    let outcome = runtime.economy.apply_token_event(event, &config);
+        .apply_token_event_on_day(event, event_day, &config);
     let now_unix = Local::now().timestamp();
     runtime
         .state_store
@@ -521,7 +544,7 @@ fn apply_token_event(
         .map_err(|err| err.to_string())?;
     runtime
         .state_store
-        .increment_daily_food(Local::now().date_naive(), outcome.food_earned)
+        .increment_daily_food(event_day, outcome.food_earned)
         .map_err(|err| err.to_string())?;
 
     for index in 0..outcome.food_earned {
@@ -534,6 +557,16 @@ fn apply_token_event(
 
     let _ = app.emit("pet_state_changed", pet_state_payload(&runtime));
     Ok(())
+}
+
+fn provider_enabled(settings: &AppSettings, provider: &str) -> bool {
+    match provider {
+        "claude_code" => settings.claude_code_enabled,
+        "codex_cli" => settings.codex_cli_enabled,
+        "openai" => settings.openai_enabled,
+        "manual" => true,
+        _ => false,
+    }
 }
 
 fn usage_sample_from_event(event: &TokenEvent) -> UsagePatternSample {
@@ -561,6 +594,52 @@ fn start_claude_code_watcher(
         return;
     }
 
+    std::thread::spawn(move || {
+        while let Ok(event) = rx.recv() {
+            if let Err(err) = apply_token_event(&app, &shared, &tracking_paused, &event) {
+                eprintln!("failed to apply token event {}: {err}", event.message_id);
+            }
+        }
+    });
+}
+
+fn start_codex_cli_watcher(
+    app: AppHandle,
+    shared: Arc<Mutex<GameRuntime>>,
+    tracking_paused: Arc<AtomicBool>,
+) {
+    let provider = CodexCliProvider::default();
+    if !provider.detect() {
+        return;
+    }
+    let (tx, rx) = mpsc::channel();
+    if let Err(err) = provider.start(tx) {
+        eprintln!("failed to start Codex CLI watcher: {err}");
+        return;
+    }
+    std::thread::spawn(move || {
+        while let Ok(event) = rx.recv() {
+            if let Err(err) = apply_token_event(&app, &shared, &tracking_paused, &event) {
+                eprintln!("failed to apply token event {}: {err}", event.message_id);
+            }
+        }
+    });
+}
+
+fn start_openai_watcher(
+    app: AppHandle,
+    shared: Arc<Mutex<GameRuntime>>,
+    tracking_paused: Arc<AtomicBool>,
+) {
+    let provider = OpenAiProvider::default();
+    if !provider.detect() {
+        return;
+    }
+    let (tx, rx) = mpsc::channel();
+    if let Err(err) = provider.start(tx) {
+        eprintln!("failed to start OpenAI usage watcher: {err}");
+        return;
+    }
     std::thread::spawn(move || {
         while let Ok(event) = rx.recv() {
             if let Err(err) = apply_token_event(&app, &shared, &tracking_paused, &event) {
@@ -628,7 +707,17 @@ pub fn run() {
                 persist_tracking_change,
             )?;
             apply_overlay_settings(app.handle(), &settings);
-            start_claude_code_watcher(app.handle().clone(), shared, tracking_paused);
+            start_claude_code_watcher(
+                app.handle().clone(),
+                shared.clone(),
+                tracking_paused.clone(),
+            );
+            start_codex_cli_watcher(
+                app.handle().clone(),
+                shared.clone(),
+                tracking_paused.clone(),
+            );
+            start_openai_watcher(app.handle().clone(), shared, tracking_paused);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -653,7 +742,9 @@ pub fn run() {
             set_tracking_paused,
             is_tracking_paused,
             set_autostart,
-            is_autostart_enabled
+            is_autostart_enabled,
+            set_openai_api_key,
+            clear_openai_api_key
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -23,6 +23,7 @@ use crate::pet::{
 };
 use crate::watcher::TokenEvent;
 use chrono::{Datelike, NaiveDate};
+use std::collections::BTreeMap;
 
 /// One Food-conversion outcome, returned by [`EconomyState::apply_token_event`]
 /// for observability/testing.
@@ -45,10 +46,12 @@ pub struct EconomyState {
     /// Local calendar day the daily counters below apply to.
     pub current_day: NaiveDate,
     pub food_earned_today: u32,
+    pub food_earned_by_day: BTreeMap<String, u32>,
     /// Weighted tokens banked toward the next Food, at the current cost
     /// tier; resets to 0 at each day boundary (unspent tokens don't carry
     /// across days - only whole Food/Pantry stock does).
     pub banked_tokens_today: f64,
+    pub banked_tokens_by_day: BTreeMap<String, f64>,
     /// Persists across days; capped at `config.pantry_max`.
     pub pantry: u32,
     /// Food earned but not yet eaten. Eating (fullness/XP effects) is
@@ -65,6 +68,7 @@ pub struct EconomyState {
     pub weekly_milestone_claimed: bool,
     pub daily_quest: DailyQuestState,
     pub usage_stats: UsagePatternStats,
+    pub providers_by_day: BTreeMap<String, Vec<String>>,
     pub evolution_stage: EvolutionStage,
     pub evolution_branch: EvolutionBranch,
     pub album: Vec<String>,
@@ -145,7 +149,9 @@ impl EconomyState {
         Self {
             current_day: day,
             food_earned_today: 0,
+            food_earned_by_day: BTreeMap::new(),
             banked_tokens_today: 0.0,
+            banked_tokens_by_day: BTreeMap::new(),
             pantry: 0,
             food_inventory: 0,
             fullness: 100.0,
@@ -159,6 +165,7 @@ impl EconomyState {
             weekly_milestone_claimed: false,
             daily_quest: DailyQuestState::for_day(day),
             usage_stats: UsagePatternStats::default(),
+            providers_by_day: BTreeMap::new(),
             evolution_stage: EvolutionStage::Egg,
             evolution_branch: EvolutionBranch::Sprout,
             album: vec![album_key(EvolutionStage::Egg, EvolutionBranch::Sprout, 0)],
@@ -283,7 +290,34 @@ impl EconomyState {
         event: &TokenEvent,
         config: &EconomyConfig,
     ) -> ConversionOutcome {
-        self.banked_tokens_today += weighted_tokens(event, config);
+        self.apply_token_event_on_day(event, self.current_day, config)
+    }
+
+    pub fn apply_token_event_on_day(
+        &mut self,
+        event: &TokenEvent,
+        event_day: NaiveDate,
+        config: &EconomyConfig,
+    ) -> ConversionOutcome {
+        let day_key = event_day.to_string();
+        let mut banked_tokens = if event_day == self.current_day {
+            self.banked_tokens_today
+        } else {
+            self.banked_tokens_by_day
+                .get(&day_key)
+                .copied()
+                .unwrap_or_default()
+        };
+        let mut food_earned_for_day = if event_day == self.current_day {
+            self.food_earned_today
+        } else {
+            self.food_earned_by_day
+                .get(&day_key)
+                .copied()
+                .unwrap_or_default()
+        };
+
+        banked_tokens += weighted_tokens(event, config);
 
         let mut outcome = ConversionOutcome {
             food_earned: 0,
@@ -292,7 +326,7 @@ impl EconomyState {
         };
 
         loop {
-            let today_count_so_far = self.food_earned_today + outcome.food_earned;
+            let today_count_so_far = food_earned_for_day + outcome.food_earned;
             let under_hard_cap = today_count_so_far < config.daily_hard_cap;
             let pantry_has_room = self.pantry + outcome.food_to_pantry < config.pantry_max;
 
@@ -307,22 +341,22 @@ impl EconomyState {
             // nothing more can happen with today's tokens, regardless of
             // amount).
             if !under_hard_cap && !pantry_has_room {
-                outcome.tokens_wasted += self.banked_tokens_today;
-                self.banked_tokens_today = 0.0;
+                outcome.tokens_wasted += banked_tokens;
+                banked_tokens = 0.0;
                 break;
             }
 
             let next_food_index = today_count_so_far + outcome.food_to_pantry + 1;
             let cost = cost_of_nth_food(next_food_index, config);
 
-            if self.banked_tokens_today < cost {
+            if banked_tokens < cost {
                 // Not enough for the next food yet, but there's still a
                 // valid destination for it - carry it over as progress
                 // toward the next event (or tomorrow, once the day rolls).
                 break;
             }
 
-            self.banked_tokens_today -= cost;
+            banked_tokens -= cost;
             if under_hard_cap {
                 outcome.food_earned += 1;
             } else {
@@ -330,14 +364,26 @@ impl EconomyState {
             }
         }
 
-        self.food_earned_today += outcome.food_earned;
+        food_earned_for_day += outcome.food_earned;
+        if event_day == self.current_day {
+            self.food_earned_today = food_earned_for_day;
+            self.banked_tokens_today = banked_tokens;
+        } else {
+            self.food_earned_by_day
+                .insert(day_key.clone(), food_earned_for_day);
+            self.banked_tokens_by_day.insert(day_key, banked_tokens);
+        }
         self.pantry = (self.pantry + outcome.food_to_pantry).min(config.pantry_max);
         self.food_inventory += outcome.food_earned;
         if outcome.food_earned > 0 {
-            self.record_activity_day(self.current_day);
-            self.weekly_food_earned += outcome.food_earned;
-            self.advance_daily_quest_for_food(outcome.food_earned);
-            self.check_weekly_milestone();
+            if event_day >= self.last_activity_day.unwrap_or(event_day) {
+                self.record_activity_day(event_day);
+            }
+            if event_day == self.current_day {
+                self.weekly_food_earned += outcome.food_earned;
+                self.advance_daily_quest_for_food(outcome.food_earned);
+                self.check_weekly_milestone();
+            }
         }
 
         outcome
@@ -347,6 +393,33 @@ impl EconomyState {
         self.usage_stats.record_day(sample);
         if sample.night_events > 0 {
             self.advance_daily_quest_for_night_usage();
+        }
+    }
+
+    pub fn record_provider_usage(&mut self, provider: &str, sample: UsagePatternSample) {
+        self.record_provider_usage_on_day(provider, sample, self.current_day);
+    }
+
+    pub fn record_provider_usage_on_day(
+        &mut self,
+        provider: &str,
+        mut sample: UsagePatternSample,
+        day: NaiveDate,
+    ) {
+        sample.provider_count = 1;
+        self.usage_stats.record_day(sample);
+        if day == self.current_day && sample.night_events > 0 {
+            self.advance_daily_quest_for_night_usage();
+        }
+
+        let key = day.to_string();
+        let providers = self.providers_by_day.entry(key).or_default();
+        let was_multi = providers.len() > 1;
+        if !providers.iter().any(|seen| seen == provider) {
+            providers.push(provider.to_string());
+        }
+        if !was_multi && providers.len() > 1 {
+            self.usage_stats.multi_provider_days += 1;
         }
     }
 
@@ -395,6 +468,8 @@ impl EconomyState {
             if self.food_earned_today == 0 && self.pantry > 0 {
                 self.auto_feed_from_pantry(config);
             }
+            self.food_earned_by_day
+                .insert(self.current_day.to_string(), self.food_earned_today);
             self.food_earned_today = 0;
             self.banked_tokens_today = 0.0;
             self.roll_daily_quest();
@@ -951,5 +1026,53 @@ mod tests {
             .album_records
             .iter()
             .any(|record| record.stage == EvolutionStage::Elder));
+    }
+
+    #[test]
+    fn delayed_provider_usage_uses_caps_for_the_day_it_occurred() {
+        let config = test_config();
+        let mut state = EconomyState::new(day(2026, 1, 2), 86_400);
+        state.food_earned_today = config.daily_hard_cap;
+
+        let delayed_day = day(2026, 1, 1);
+        let outcome = state.apply_token_event_on_day(
+            &event_for_food_count("openai-late", 2, &config),
+            delayed_day,
+            &config,
+        );
+
+        assert_eq!(outcome.food_earned, 2);
+        assert_eq!(
+            state.food_earned_today, config.daily_hard_cap,
+            "today's exhausted cap must not block a delayed prior-day event"
+        );
+        assert_eq!(
+            state
+                .food_earned_by_day
+                .get(&delayed_day.to_string())
+                .copied(),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn provider_mix_counts_once_per_multi_provider_day_for_chimera() {
+        let mut state = EconomyState::new(day(2026, 1, 1), 0);
+        let sample = UsagePatternSample::single_event(12, 1);
+
+        state.record_provider_usage("claude_code", sample);
+        state.record_provider_usage("claude_code", sample);
+        assert_eq!(state.usage_stats.multi_provider_days, 0);
+
+        state.record_provider_usage("codex_cli", sample);
+        state.record_provider_usage("openai", sample);
+        assert_eq!(state.usage_stats.multi_provider_days, 1);
+        assert_eq!(
+            state
+                .providers_by_day
+                .get("2026-01-01")
+                .map(|providers| providers.len()),
+            Some(3)
+        );
     }
 }

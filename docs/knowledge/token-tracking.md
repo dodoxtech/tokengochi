@@ -39,8 +39,8 @@ Events are deduplicated by `(provider, message_id)` in the ledger so re-reads ne
 
 ## OpenAI / Codex CLI (v2 plugin)
 
-- Codex CLI: local session logs (`~/.codex/sessions/`) — same tailing approach; verify format at implementation time.
-- Raw OpenAI API: no local logs; options are the Usage API (needs org API key, minutes of delay) or a local proxy mode. Ship as opt-in plugin; delay is acceptable since food just arrives late.
+- Codex CLI: local session logs (`~/.codex/sessions/`) — same tailing approach. Verified on 2026-07-12 against local Codex Desktop/CLI JSONL: token usage appears as `event_msg` records with `payload.type = "token_count"` and `payload.info.last_token_usage`. The parser reads only `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_output_tokens`, timestamp, and optional ids/model.
+- Raw OpenAI API: Usage API polling (opt-in). API key is stored in the OS keychain helper, never SQLite/config. Usage API buckets are delayed, so Tokengochi converts them using the bucket `start_time` day rather than the polling day.
 
 ## Manual / Demo (v1)
 

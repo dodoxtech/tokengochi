@@ -40,6 +40,8 @@
     onboardingComplete: boolean;
     starterEgg: string;
     claudeCodeEnabled: boolean;
+    codexCliEnabled: boolean;
+    openaiEnabled: boolean;
     petSize: number;
     monitorIndex: number;
     waylandFallback: boolean;
@@ -51,7 +53,7 @@
   type DashboardState = {
     pet: PetState;
     settings: AppSettings;
-    providers: { claudeCodeDetected: boolean };
+    providers: { claudeCodeDetected: boolean; codexCliDetected: boolean; openaiKeyConfigured: boolean };
     stats: { food: FoodStats; todayTokens: TokenTotals; weekTokens: TokenTotals; streakDays: number };
     monitorCount: number;
     shopCatalog: ShopItem[];
@@ -72,6 +74,7 @@
   let error = $state("");
   let updateStatus = $state<UpdateStatus>("idle");
   let updateVersion = $state("");
+  let openaiApiKey = $state("");
 
   function formatNumber(value: number): string {
     return Math.round(value).toLocaleString();
@@ -152,6 +155,27 @@
 
   async function installAndRestart() {
     await relaunch();
+  }
+
+  async function saveOpenAiKey() {
+    try {
+      error = "";
+      await invoke("set_openai_api_key", { apiKey: openaiApiKey });
+      openaiApiKey = "";
+      await refresh();
+    } catch (cause) {
+      error = String(cause);
+    }
+  }
+
+  async function clearOpenAiKey() {
+    try {
+      error = "";
+      await invoke("clear_openai_api_key");
+      await refresh();
+    } catch (cause) {
+      error = String(cause);
+    }
   }
 
   async function applyPetCommand(command: string, args: Record<string, unknown> = {}) {
@@ -372,6 +396,35 @@
           />
           <span>Track Claude Code</span>
         </label>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={dashboard.settings.codexCliEnabled}
+            onchange={() => patchSettings({ codexCliEnabled: !dashboard?.settings.codexCliEnabled })}
+          />
+          <span>Track Codex CLI {dashboard.providers.codexCliDetected ? "" : "(not detected)"}</span>
+        </label>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={dashboard.settings.openaiEnabled}
+            onchange={() => patchSettings({ openaiEnabled: !dashboard?.settings.openaiEnabled })}
+          />
+          <span>Track OpenAI Usage API {dashboard.providers.openaiKeyConfigured ? "" : "(key needed)"}</span>
+        </label>
+        <div class="field openai-key">
+          <span>OpenAI key</span>
+          <input
+            type="password"
+            autocomplete="off"
+            placeholder={dashboard.providers.openaiKeyConfigured ? "Stored in keychain" : "sk-..."}
+            bind:value={openaiApiKey}
+          />
+          <div class="button-row">
+            <button class="ghost" disabled={!openaiApiKey} onclick={saveOpenAiKey}>Store</button>
+            <button class="ghost" onclick={clearOpenAiKey}>Clear</button>
+          </div>
+        </div>
         <label class="toggle">
           <input
             type="checkbox"
@@ -663,6 +716,13 @@
   }
   .update-row {
     grid-template-columns: 120px 1fr auto;
+  }
+  .openai-key {
+    grid-template-columns: 120px 1fr auto;
+  }
+  .button-row {
+    display: flex;
+    gap: 8px;
   }
   .update-status {
     color: #aebbd1;
