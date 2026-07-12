@@ -4,7 +4,8 @@
 //! needs a compact "what is pending right now?" snapshot so queued Food
 //! survives app restarts.
 
-use crate::economy::EconomyState;
+use crate::economy::{DailyQuestState, EconomyState};
+use crate::pet::{EvolutionBranch, EvolutionEvent, EvolutionStage, UsagePatternStats};
 use chrono::NaiveDate;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
@@ -69,11 +70,25 @@ impl GameStateStore {
                 food_inventory        INTEGER NOT NULL,
                 fullness              REAL NOT NULL,
                 xp                    REAL NOT NULL,
+                sparks                INTEGER NOT NULL DEFAULT 0,
+                streak_days           INTEGER NOT NULL DEFAULT 0,
+                streak_freezes        INTEGER NOT NULL DEFAULT 0,
+                last_activity_day     TEXT,
+                weekly_food_earned    INTEGER NOT NULL DEFAULT 0,
+                weekly_target         INTEGER NOT NULL DEFAULT 7,
+                weekly_milestone_claimed INTEGER NOT NULL DEFAULT 0,
+                daily_quest_json      TEXT NOT NULL DEFAULT '',
+                usage_stats_json      TEXT NOT NULL DEFAULT '',
+                evolution_stage       TEXT NOT NULL DEFAULT 'Egg',
+                evolution_branch      TEXT NOT NULL DEFAULT 'Sprout',
+                album_json            TEXT NOT NULL DEFAULT '',
+                pending_evolution_json TEXT,
                 last_reconciled_unix  INTEGER NOT NULL,
                 updated_at_unix       INTEGER NOT NULL
             )",
             [],
         )?;
+        migrate_economy_state_columns(&conn)?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS app_settings (
                 id                    INTEGER PRIMARY KEY CHECK (id = 1),
@@ -102,7 +117,11 @@ impl GameStateStore {
         self.conn
             .query_row(
                 "SELECT current_day, food_earned_today, banked_tokens_today, pantry,
-                        food_inventory, fullness, xp, last_reconciled_unix
+                        food_inventory, fullness, xp, sparks, streak_days, streak_freezes,
+                        last_activity_day, weekly_food_earned, weekly_target,
+                        weekly_milestone_claimed, daily_quest_json, usage_stats_json,
+                        evolution_stage, evolution_branch, album_json,
+                        pending_evolution_json, last_reconciled_unix
                  FROM economy_state
                  WHERE id = 1",
                 [],
@@ -117,6 +136,18 @@ impl GameStateStore {
                             )
                         })?;
 
+                    let last_activity_raw: Option<String> = row.get(10)?;
+                    let last_activity_day = last_activity_raw
+                        .as_deref()
+                        .map(|raw| parse_date_column(raw, 10))
+                        .transpose()?;
+                    let daily_quest_raw: String = row.get(14)?;
+                    let usage_stats_raw: String = row.get(15)?;
+                    let evolution_stage_raw: String = row.get(16)?;
+                    let evolution_branch_raw: String = row.get(17)?;
+                    let album_raw: String = row.get(18)?;
+                    let pending_evolution_raw: Option<String> = row.get(19)?;
+
                     Ok(EconomyState {
                         current_day,
                         food_earned_today: row.get::<_, i64>(1)? as u32,
@@ -125,7 +156,32 @@ impl GameStateStore {
                         food_inventory: row.get::<_, i64>(4)? as u32,
                         fullness: row.get(5)?,
                         xp: row.get(6)?,
-                        last_reconciled_unix: row.get(7)?,
+                        sparks: row.get::<_, i64>(7)? as u32,
+                        streak_days: row.get::<_, i64>(8)? as u32,
+                        streak_freezes: row.get::<_, i64>(9)? as u32,
+                        last_activity_day,
+                        weekly_food_earned: row.get::<_, i64>(11)? as u32,
+                        weekly_target: row.get::<_, i64>(12)? as u32,
+                        weekly_milestone_claimed: row.get::<_, i64>(13)? != 0,
+                        daily_quest: json_or_default(&daily_quest_raw, || {
+                            DailyQuestState::for_day(current_day)
+                        }),
+                        usage_stats: json_or_default(&usage_stats_raw, UsagePatternStats::default),
+                        evolution_stage: json_or_default_string(
+                            &evolution_stage_raw,
+                            EvolutionStage::Egg,
+                        ),
+                        evolution_branch: json_or_default_string(
+                            &evolution_branch_raw,
+                            EvolutionBranch::Sprout,
+                        ),
+                        album: json_or_default(&album_raw, || {
+                            vec![EvolutionBranch::Sprout.as_album_key(EvolutionStage::Egg)]
+                        }),
+                        pending_evolution: pending_evolution_raw
+                            .as_deref()
+                            .and_then(|raw| serde_json::from_str::<EvolutionEvent>(raw).ok()),
+                        last_reconciled_unix: row.get(20)?,
                     })
                 },
             )
@@ -136,9 +192,14 @@ impl GameStateStore {
         self.conn.execute(
             "INSERT INTO economy_state (
                 id, current_day, food_earned_today, banked_tokens_today, pantry,
-                food_inventory, fullness, xp, last_reconciled_unix, updated_at_unix
+                food_inventory, fullness, xp, sparks, streak_days, streak_freezes,
+                last_activity_day, weekly_food_earned, weekly_target,
+                weekly_milestone_claimed, daily_quest_json, usage_stats_json,
+                evolution_stage, evolution_branch, album_json, pending_evolution_json,
+                last_reconciled_unix, updated_at_unix
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                     ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
              ON CONFLICT(id) DO UPDATE SET
                 current_day = excluded.current_day,
                 food_earned_today = excluded.food_earned_today,
@@ -147,6 +208,19 @@ impl GameStateStore {
                 food_inventory = excluded.food_inventory,
                 fullness = excluded.fullness,
                 xp = excluded.xp,
+                sparks = excluded.sparks,
+                streak_days = excluded.streak_days,
+                streak_freezes = excluded.streak_freezes,
+                last_activity_day = excluded.last_activity_day,
+                weekly_food_earned = excluded.weekly_food_earned,
+                weekly_target = excluded.weekly_target,
+                weekly_milestone_claimed = excluded.weekly_milestone_claimed,
+                daily_quest_json = excluded.daily_quest_json,
+                usage_stats_json = excluded.usage_stats_json,
+                evolution_stage = excluded.evolution_stage,
+                evolution_branch = excluded.evolution_branch,
+                album_json = excluded.album_json,
+                pending_evolution_json = excluded.pending_evolution_json,
                 last_reconciled_unix = excluded.last_reconciled_unix,
                 updated_at_unix = excluded.updated_at_unix",
             params![
@@ -157,6 +231,22 @@ impl GameStateStore {
                 state.food_inventory as i64,
                 state.fullness,
                 state.xp,
+                state.sparks as i64,
+                state.streak_days as i64,
+                state.streak_freezes as i64,
+                state.last_activity_day.map(|day| day.to_string()),
+                state.weekly_food_earned as i64,
+                state.weekly_target as i64,
+                bool_to_i64(state.weekly_milestone_claimed),
+                serde_json::to_string(&state.daily_quest).unwrap_or_default(),
+                serde_json::to_string(&state.usage_stats).unwrap_or_default(),
+                serde_json::to_string(&state.evolution_stage).unwrap_or_default(),
+                serde_json::to_string(&state.evolution_branch).unwrap_or_default(),
+                serde_json::to_string(&state.album).unwrap_or_default(),
+                state
+                    .pending_evolution
+                    .as_ref()
+                    .and_then(|event| serde_json::to_string(event).ok()),
                 state.last_reconciled_unix,
                 now_unix,
             ],
@@ -268,6 +358,75 @@ fn bool_to_i64(value: bool) -> i64 {
     } else {
         0
     }
+}
+
+fn parse_date_column(raw: &str, column: usize) -> rusqlite::Result<NaiveDate> {
+    NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|err| {
+        rusqlite::Error::FromSqlConversionFailure(
+            column,
+            rusqlite::types::Type::Text,
+            Box::new(err),
+        )
+    })
+}
+
+fn json_or_default<T, F>(raw: &str, fallback: F) -> T
+where
+    T: serde::de::DeserializeOwned,
+    F: FnOnce() -> T,
+{
+    if raw.is_empty() {
+        return fallback();
+    }
+    serde_json::from_str(raw).unwrap_or_else(|_| fallback())
+}
+
+fn json_or_default_string<T>(raw: &str, fallback: T) -> T
+where
+    T: serde::de::DeserializeOwned,
+{
+    serde_json::from_str(raw).unwrap_or(fallback)
+}
+
+fn migrate_economy_state_columns(conn: &Connection) -> rusqlite::Result<()> {
+    let columns = [
+        ("sparks", "INTEGER NOT NULL DEFAULT 0"),
+        ("streak_days", "INTEGER NOT NULL DEFAULT 0"),
+        ("streak_freezes", "INTEGER NOT NULL DEFAULT 0"),
+        ("last_activity_day", "TEXT"),
+        ("weekly_food_earned", "INTEGER NOT NULL DEFAULT 0"),
+        ("weekly_target", "INTEGER NOT NULL DEFAULT 7"),
+        ("weekly_milestone_claimed", "INTEGER NOT NULL DEFAULT 0"),
+        ("daily_quest_json", "TEXT NOT NULL DEFAULT ''"),
+        ("usage_stats_json", "TEXT NOT NULL DEFAULT ''"),
+        ("evolution_stage", "TEXT NOT NULL DEFAULT 'Egg'"),
+        ("evolution_branch", "TEXT NOT NULL DEFAULT 'Sprout'"),
+        ("album_json", "TEXT NOT NULL DEFAULT ''"),
+        ("pending_evolution_json", "TEXT"),
+    ];
+
+    for (name, definition) in columns {
+        if !table_has_column(conn, "economy_state", name)? {
+            conn.execute(
+                &format!("ALTER TABLE economy_state ADD COLUMN {name} {definition}"),
+                [],
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn table_has_column(conn: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(test)]

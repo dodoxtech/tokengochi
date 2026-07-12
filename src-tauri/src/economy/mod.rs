@@ -18,5 +18,5 @@ mod xp;
 pub use config::{load_economy_config, EconomyConfig};
 pub use conversion::{cost_of_nth_food, model_multiplier, weighted_tokens};
 pub use fullness::{mood_from_fullness, mood_multiplier};
-pub use state::{ConversionOutcome, EconomyState};
+pub use state::{ConversionOutcome, DailyQuestKind, DailyQuestState, EconomyState};
 pub use xp::{level_for_xp, xp_required_for_level, MAX_LEVEL};

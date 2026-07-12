@@ -16,9 +16,13 @@
 
 use super::conversion::{cost_of_nth_food, weighted_tokens};
 use super::fullness::{mood_from_fullness, mood_multiplier};
-use super::EconomyConfig;
+use super::{level_for_xp, EconomyConfig};
+use crate::pet::{
+    stage_for_level, EvolutionBranch, EvolutionEvent, EvolutionStage, UsagePatternSample,
+    UsagePatternStats,
+};
 use crate::watcher::TokenEvent;
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 
 /// One Food-conversion outcome, returned by [`EconomyState::apply_token_event`]
 /// for observability/testing.
@@ -52,8 +56,70 @@ pub struct EconomyState {
     pub food_inventory: u32,
     pub fullness: f64,
     pub xp: f64,
+    pub sparks: u32,
+    pub streak_days: u32,
+    pub streak_freezes: u32,
+    pub last_activity_day: Option<NaiveDate>,
+    pub weekly_food_earned: u32,
+    pub weekly_target: u32,
+    pub weekly_milestone_claimed: bool,
+    pub daily_quest: DailyQuestState,
+    pub usage_stats: UsagePatternStats,
+    pub evolution_stage: EvolutionStage,
+    pub evolution_branch: EvolutionBranch,
+    pub album: Vec<String>,
+    pub pending_evolution: Option<EvolutionEvent>,
     /// Unix seconds of the last time decay/day-rollover was reconciled.
     pub last_reconciled_unix: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DailyQuestKind {
+    EarnOneFood,
+    EarnThreeFood,
+    UseAtNight,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyQuestState {
+    pub day: NaiveDate,
+    pub kind: DailyQuestKind,
+    pub progress: u32,
+    pub target: u32,
+    pub reward_sparks: u32,
+    pub completed: bool,
+}
+
+impl DailyQuestState {
+    pub fn for_day(day: NaiveDate) -> Self {
+        match day.num_days_from_ce().rem_euclid(3) {
+            0 => Self {
+                day,
+                kind: DailyQuestKind::EarnOneFood,
+                progress: 0,
+                target: 1,
+                reward_sparks: 1,
+                completed: false,
+            },
+            1 => Self {
+                day,
+                kind: DailyQuestKind::EarnThreeFood,
+                progress: 0,
+                target: 3,
+                reward_sparks: 2,
+                completed: false,
+            },
+            _ => Self {
+                day,
+                kind: DailyQuestKind::UseAtNight,
+                progress: 0,
+                target: 1,
+                reward_sparks: 1,
+                completed: false,
+            },
+        }
+    }
 }
 
 impl EconomyState {
@@ -67,6 +133,19 @@ impl EconomyState {
             food_inventory: 0,
             fullness: 100.0,
             xp: 0.0,
+            sparks: 0,
+            streak_days: 0,
+            streak_freezes: 0,
+            last_activity_day: None,
+            weekly_food_earned: 0,
+            weekly_target: 7,
+            weekly_milestone_claimed: false,
+            daily_quest: DailyQuestState::for_day(day),
+            usage_stats: UsagePatternStats::default(),
+            evolution_stage: EvolutionStage::Egg,
+            evolution_branch: EvolutionBranch::Sprout,
+            album: vec![EvolutionBranch::Sprout.as_album_key(EvolutionStage::Egg)],
+            pending_evolution: None,
             last_reconciled_unix: now_unix,
         }
     }
@@ -130,8 +209,21 @@ impl EconomyState {
         self.food_earned_today += outcome.food_earned;
         self.pantry = (self.pantry + outcome.food_to_pantry).min(config.pantry_max);
         self.food_inventory += outcome.food_earned;
+        if outcome.food_earned > 0 {
+            self.record_activity_day(self.current_day);
+            self.weekly_food_earned += outcome.food_earned;
+            self.advance_daily_quest_for_food(outcome.food_earned);
+            self.check_weekly_milestone();
+        }
 
         outcome
+    }
+
+    pub fn record_usage_pattern(&mut self, sample: UsagePatternSample) {
+        self.usage_stats.record_day(sample);
+        if sample.night_events > 0 {
+            self.advance_daily_quest_for_night_usage();
+        }
     }
 
     /// Eats one Food from `food_inventory`, applying fullness/XP effects.
@@ -143,6 +235,7 @@ impl EconomyState {
         }
         self.food_inventory -= 1;
         self.eat_one_food(config);
+        self.check_evolution(config);
         true
     }
 
@@ -180,9 +273,15 @@ impl EconomyState {
             }
             self.food_earned_today = 0;
             self.banked_tokens_today = 0.0;
+            self.roll_daily_quest();
+            if self.current_day.weekday().number_from_monday() == 7 {
+                self.roll_week();
+            }
+            self.current_day = self
+                .current_day
+                .succ_opt()
+                .expect("date overflow while rolling economy day");
         }
-
-        self.current_day = today;
     }
 
     fn auto_feed_from_pantry(&mut self, config: &EconomyConfig) {
@@ -190,7 +289,9 @@ impl EconomyState {
             return;
         }
         self.pantry -= 1;
+        self.record_activity_day(self.current_day);
         self.eat_one_food(config);
+        self.check_evolution(config);
     }
 
     /// Shared fullness/XP math for "the pet ate one Food," regardless of
@@ -201,6 +302,135 @@ impl EconomyState {
         let xp_gain = config.xp_per_food as f64 * mood_multiplier(mood);
         self.xp += xp_gain;
         self.fullness = (self.fullness + config.fullness_per_food as f64).min(100.0);
+    }
+
+    fn record_activity_day(&mut self, day: NaiveDate) {
+        if self.last_activity_day == Some(day) {
+            return;
+        }
+
+        let continued = self
+            .last_activity_day
+            .map(|last| day == last.succ_opt().unwrap_or(last))
+            .unwrap_or(false);
+        let gap_days = self
+            .last_activity_day
+            .map(|last| (day - last).num_days())
+            .unwrap_or(0);
+
+        if self.last_activity_day.is_none() || continued {
+            self.streak_days += 1;
+        } else if gap_days == 2 && self.streak_freezes > 0 {
+            self.streak_freezes -= 1;
+            self.streak_days += 1;
+        } else {
+            self.streak_days = 1;
+        }
+
+        self.last_activity_day = Some(day);
+        self.apply_streak_rewards();
+    }
+
+    fn apply_streak_rewards(&mut self) {
+        let sparks = match self.streak_days {
+            3 => 1,
+            7 => 3,
+            14 => 5,
+            30 => 10,
+            100 => 30,
+            _ => 0,
+        };
+        self.sparks += sparks;
+
+        if self.streak_days > 0 && self.streak_days % 7 == 0 {
+            self.streak_freezes = (self.streak_freezes + 1).min(2);
+        }
+    }
+
+    fn advance_daily_quest_for_food(&mut self, food: u32) {
+        if matches!(
+            self.daily_quest.kind,
+            DailyQuestKind::EarnOneFood | DailyQuestKind::EarnThreeFood
+        ) {
+            self.daily_quest.progress =
+                (self.daily_quest.progress + food).min(self.daily_quest.target);
+            self.complete_daily_quest_if_ready();
+        }
+    }
+
+    fn advance_daily_quest_for_night_usage(&mut self) {
+        if self.daily_quest.kind == DailyQuestKind::UseAtNight {
+            self.daily_quest.progress = self.daily_quest.target;
+            self.complete_daily_quest_if_ready();
+        }
+    }
+
+    fn complete_daily_quest_if_ready(&mut self) {
+        if !self.daily_quest.completed && self.daily_quest.progress >= self.daily_quest.target {
+            self.daily_quest.completed = true;
+            self.sparks += self.daily_quest.reward_sparks;
+        }
+    }
+
+    fn check_weekly_milestone(&mut self) {
+        if !self.weekly_milestone_claimed && self.weekly_food_earned >= self.weekly_target {
+            self.weekly_milestone_claimed = true;
+            self.sparks += 4;
+        }
+    }
+
+    fn roll_daily_quest(&mut self) {
+        let next_day = self
+            .current_day
+            .succ_opt()
+            .expect("date overflow while rolling daily quest");
+        self.daily_quest = DailyQuestState::for_day(next_day);
+    }
+
+    fn roll_week(&mut self) {
+        let completed_food = self.weekly_food_earned;
+        self.weekly_target = ((completed_food as f64 * 0.85).round() as u32).clamp(3, 35);
+        self.weekly_food_earned = 0;
+        self.weekly_milestone_claimed = false;
+    }
+
+    fn check_evolution(&mut self, config: &EconomyConfig) {
+        let level = level_for_xp(self.xp, config);
+        let next_stage = stage_for_level(level);
+        if next_stage == self.evolution_stage {
+            return;
+        }
+
+        let branch = if matches!(next_stage, EvolutionStage::Juvenile | EvolutionStage::Adult) {
+            self.usage_stats.selected_branch()
+        } else {
+            self.evolution_branch
+        };
+
+        self.evolution_stage = next_stage;
+        self.evolution_branch = branch;
+        self.sparks += evolution_reward_sparks(next_stage);
+
+        let album_key = branch.as_album_key(next_stage);
+        if !self.album.contains(&album_key) {
+            self.album.push(album_key.clone());
+        }
+        self.pending_evolution = Some(EvolutionEvent {
+            stage: next_stage,
+            branch,
+            level,
+            album_key,
+        });
+    }
+}
+
+fn evolution_reward_sparks(stage: EvolutionStage) -> u32 {
+    match stage {
+        EvolutionStage::Egg => 0,
+        EvolutionStage::Hatchling => 2,
+        EvolutionStage::Juvenile => 5,
+        EvolutionStage::Adult => 10,
+        EvolutionStage::Elder => 20,
     }
 }
 
@@ -267,6 +497,14 @@ mod tests {
             cache_read_tokens: 0,
             timestamp: 0,
         }
+    }
+
+    fn event_for_food_count(id: &str, food_count: u32, config: &EconomyConfig) -> TokenEvent {
+        let tokens = (1..=food_count)
+            .map(|index| cost_of_nth_food(index, config))
+            .sum::<f64>()
+            .ceil() as u64;
+        small_event(id, tokens)
     }
 
     #[test]
@@ -448,6 +686,63 @@ mod tests {
         assert_eq!(
             state.food_inventory, 2,
             "EconomyState alone is not idempotent by design"
+        );
+    }
+
+    #[test]
+    fn simulated_60_day_usage_tracks_evolution_streaks_quests_and_sparks() {
+        let config = test_config();
+        let start = day(2026, 1, 1);
+        let mut state = EconomyState::new(start, 0);
+
+        for offset in 0..60 {
+            let current_day = start + chrono::Duration::days(offset);
+            state.reconcile_elapsed_time(offset * 86_400, current_day, &config);
+
+            // One missed day: no Pantry stock in this simulation, so the
+            // following active day must spend a streak freeze.
+            if offset == 14 {
+                continue;
+            }
+
+            state.record_usage_pattern(UsagePatternSample {
+                night_events: 1,
+                session_count: 1,
+                short_sessions: 0,
+                long_sessions: 1,
+                provider_count: 1,
+            });
+            let outcome = state.apply_token_event(
+                &event_for_food_count(&format!("day-{offset}"), 20, &config),
+                &config,
+            );
+            assert_eq!(outcome.food_earned, 20);
+            assert_eq!(outcome.food_to_pantry, 0);
+
+            while state.eat_from_inventory(&config) {}
+        }
+
+        assert_eq!(state.streak_days, 59);
+        assert_eq!(
+            state.last_activity_day,
+            Some(start + chrono::Duration::days(59))
+        );
+        assert_eq!(state.evolution_stage, EvolutionStage::Adult);
+        assert_eq!(state.evolution_branch, EvolutionBranch::Nocturnal);
+        assert!(state.album.contains(&"hatchling:sprout".to_string()));
+        assert!(state.album.contains(&"juvenile:nocturnal".to_string()));
+        assert!(state.album.contains(&"adult:nocturnal".to_string()));
+        assert_eq!(
+            state.pending_evolution.as_ref().unwrap().stage,
+            EvolutionStage::Adult
+        );
+        assert!(
+            state.sparks >= 140,
+            "streak, daily quest, weekly milestone, and evolution rewards should all contribute"
+        );
+        assert!(
+            state.daily_quest.completed,
+            "quests are auto-detected from food/night usage without UI interaction"
         );
     }
 }

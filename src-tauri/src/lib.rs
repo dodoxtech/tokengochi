@@ -5,8 +5,9 @@ mod store;
 mod tray;
 mod watcher;
 
-use chrono::{Datelike, Duration, Local, TimeZone};
-use economy::{level_for_xp, mood_from_fullness, EconomyConfig, EconomyState};
+use chrono::{Datelike, Duration, Local, TimeZone, Timelike};
+use economy::{level_for_xp, mood_from_fullness, DailyQuestState, EconomyConfig, EconomyState};
+use pet::{EvolutionBranch, EvolutionEvent, EvolutionStage, UsagePatternSample};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc, Mutex,
@@ -40,6 +41,17 @@ struct PetStatePayload {
     mood: pet::Mood,
     xp: f64,
     level: u32,
+    evolution_stage: EvolutionStage,
+    evolution_branch: EvolutionBranch,
+    sparks: u32,
+    streak_days: u32,
+    streak_freezes: u32,
+    daily_quest: DailyQuestState,
+    weekly_food_earned: u32,
+    weekly_target: u32,
+    weekly_milestone_claimed: bool,
+    album: Vec<String>,
+    pending_evolution: Option<EvolutionEvent>,
     pending_food: u32,
     pantry: u32,
     food_earned_today: u32,
@@ -262,6 +274,17 @@ fn pet_state_payload(runtime: &GameRuntime) -> PetStatePayload {
         mood: mood_from_fullness(runtime.economy.fullness),
         xp: runtime.economy.xp,
         level: level_for_xp(runtime.economy.xp, &runtime.config),
+        evolution_stage: runtime.economy.evolution_stage,
+        evolution_branch: runtime.economy.evolution_branch,
+        sparks: runtime.economy.sparks,
+        streak_days: runtime.economy.streak_days,
+        streak_freezes: runtime.economy.streak_freezes,
+        daily_quest: runtime.economy.daily_quest.clone(),
+        weekly_food_earned: runtime.economy.weekly_food_earned,
+        weekly_target: runtime.economy.weekly_target,
+        weekly_milestone_claimed: runtime.economy.weekly_milestone_claimed,
+        album: runtime.economy.album.clone(),
+        pending_evolution: runtime.economy.pending_evolution.clone(),
         pending_food: runtime.economy.food_inventory,
         pantry: runtime.economy.pantry,
         food_earned_today: runtime.economy.food_earned_today,
@@ -300,11 +323,7 @@ fn dashboard_payload(app: &AppHandle, runtime: &GameRuntime) -> Result<Dashboard
                 .ledger
                 .token_totals_between(week_start_unix, tomorrow_start_unix)
                 .map_err(|err| err.to_string())?,
-            streak_days: if runtime.economy.food_earned_today > 0 {
-                1
-            } else {
-                0
-            },
+            streak_days: runtime.economy.streak_days,
         },
         monitor_count: available_monitor_count(app),
     })
@@ -379,6 +398,9 @@ fn apply_token_event(
     }
 
     let config = runtime.config.clone();
+    runtime
+        .economy
+        .record_usage_pattern(usage_sample_from_event(event));
     let outcome = runtime.economy.apply_token_event(event, &config);
     let now_unix = Local::now().timestamp();
     runtime
@@ -400,6 +422,15 @@ fn apply_token_event(
 
     let _ = app.emit("pet_state_changed", pet_state_payload(&runtime));
     Ok(())
+}
+
+fn usage_sample_from_event(event: &TokenEvent) -> UsagePatternSample {
+    let hour = Local
+        .timestamp_opt(event.timestamp, 0)
+        .single()
+        .map(|dt| dt.hour())
+        .unwrap_or_else(|| Local::now().hour());
+    UsagePatternSample::single_event(hour, 1)
 }
 
 fn start_claude_code_watcher(
