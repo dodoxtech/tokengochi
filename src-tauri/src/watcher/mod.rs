@@ -6,7 +6,7 @@
 //! `docs/tasks/backlog/0003-claude-code-token-watcher.md`. Nothing here is
 //! wired up yet, hence the blanket allow below - remove it once providers are
 //! actually constructed and used.
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 mod claude_code;
 mod manual;
