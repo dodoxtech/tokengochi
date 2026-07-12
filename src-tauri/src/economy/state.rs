@@ -18,8 +18,8 @@ use super::conversion::{cost_of_nth_food, weighted_tokens};
 use super::fullness::{mood_from_fullness, mood_multiplier};
 use super::{level_for_xp, EconomyConfig};
 use crate::pet::{
-    stage_for_level, EvolutionBranch, EvolutionEvent, EvolutionStage, UsagePatternSample,
-    UsagePatternStats,
+    album_key, shop_item, stage_for_level, AlbumRecord, EvolutionBranch, EvolutionEvent,
+    EvolutionStage, FurniturePlacement, ShopItemKind, UsagePatternSample, UsagePatternStats,
 };
 use crate::watcher::TokenEvent;
 use chrono::{Datelike, NaiveDate};
@@ -68,6 +68,13 @@ pub struct EconomyState {
     pub evolution_stage: EvolutionStage,
     pub evolution_branch: EvolutionBranch,
     pub album: Vec<String>,
+    pub album_records: Vec<AlbumRecord>,
+    pub owned_items: Vec<String>,
+    pub equipped_cosmetic: Option<String>,
+    pub equipped_food_skin: Option<String>,
+    pub furniture: Vec<FurniturePlacement>,
+    pub prestige_count: u32,
+    pub xp_bonus_multiplier: f64,
     pub pending_evolution: Option<EvolutionEvent>,
     /// Unix seconds of the last time decay/day-rollover was reconciled.
     pub last_reconciled_unix: i64,
@@ -89,6 +96,16 @@ pub struct DailyQuestState {
     pub target: u32,
     pub reward_sparks: u32,
     pub completed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShopError {
+    UnknownItem,
+    AlreadyOwned,
+    NotEnoughSparks,
+    NotOwned,
+    WrongItemKind,
+    PrestigeRequiresElder,
 }
 
 impl DailyQuestState {
@@ -144,10 +161,117 @@ impl EconomyState {
             usage_stats: UsagePatternStats::default(),
             evolution_stage: EvolutionStage::Egg,
             evolution_branch: EvolutionBranch::Sprout,
-            album: vec![EvolutionBranch::Sprout.as_album_key(EvolutionStage::Egg)],
+            album: vec![album_key(EvolutionStage::Egg, EvolutionBranch::Sprout, 0)],
+            album_records: vec![AlbumRecord {
+                key: album_key(EvolutionStage::Egg, EvolutionBranch::Sprout, 0),
+                stage: EvolutionStage::Egg,
+                branch: EvolutionBranch::Sprout,
+                reached_day: day.to_string(),
+                level: 0,
+                xp: 0.0,
+                sparks: 0,
+                prestige_count: 0,
+            }],
+            owned_items: Vec::new(),
+            equipped_cosmetic: None,
+            equipped_food_skin: None,
+            furniture: Vec::new(),
+            prestige_count: 0,
+            xp_bonus_multiplier: 1.0,
             pending_evolution: None,
             last_reconciled_unix: now_unix,
         }
+    }
+
+    pub fn buy_item(&mut self, item_id: &str) -> Result<(), ShopError> {
+        let item = shop_item(item_id).ok_or(ShopError::UnknownItem)?;
+        if self.owned_items.iter().any(|owned| owned == item.id) {
+            return Err(ShopError::AlreadyOwned);
+        }
+        if self.sparks < item.price_sparks {
+            return Err(ShopError::NotEnoughSparks);
+        }
+        self.sparks -= item.price_sparks;
+        self.owned_items.push(item.id.to_string());
+        if item.kind == ShopItemKind::Furniture {
+            self.place_furniture(item.id, default_furniture_x(item.id))?;
+        }
+        Ok(())
+    }
+
+    pub fn equip_item(&mut self, item_id: &str) -> Result<(), ShopError> {
+        let item = shop_item(item_id).ok_or(ShopError::UnknownItem)?;
+        if !self.owned_items.iter().any(|owned| owned == item.id) {
+            return Err(ShopError::NotOwned);
+        }
+
+        match item.kind {
+            ShopItemKind::Cosmetic | ShopItemKind::Heirloom => {
+                self.equipped_cosmetic = Some(item.id.to_string());
+                Ok(())
+            }
+            ShopItemKind::FoodSkin => {
+                self.equipped_food_skin = Some(item.id.to_string());
+                Ok(())
+            }
+            ShopItemKind::Furniture => Err(ShopError::WrongItemKind),
+        }
+    }
+
+    pub fn place_furniture(&mut self, item_id: &str, x: f64) -> Result<(), ShopError> {
+        let item = shop_item(item_id).ok_or(ShopError::UnknownItem)?;
+        if item.kind != ShopItemKind::Furniture {
+            return Err(ShopError::WrongItemKind);
+        }
+        if !self.owned_items.iter().any(|owned| owned == item.id) {
+            return Err(ShopError::NotOwned);
+        }
+        if let Some(placement) = self
+            .furniture
+            .iter_mut()
+            .find(|placement| placement.item_id == item.id)
+        {
+            placement.x = x.clamp(0.05, 0.95);
+        } else {
+            self.furniture.push(FurniturePlacement {
+                item_id: item.id.to_string(),
+                x: x.clamp(0.05, 0.95),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn prestige(&mut self, today: NaiveDate) -> Result<(), ShopError> {
+        if self.evolution_stage != EvolutionStage::Elder {
+            return Err(ShopError::PrestigeRequiresElder);
+        }
+
+        let retained_sparks = self.sparks;
+        let retained_owned_items = self.owned_items.clone();
+        let retained_furniture = self.furniture.clone();
+        let retained_album = self.album.clone();
+        let retained_album_records = self.album_records.clone();
+        let next_prestige = self.prestige_count + 1;
+        let next_xp_bonus = 1.0 + (next_prestige as f64 * 0.10);
+
+        *self = Self::new(today, self.last_reconciled_unix);
+        self.sparks = retained_sparks;
+        self.owned_items = retained_owned_items;
+        if !self
+            .owned_items
+            .iter()
+            .any(|owned| owned == "halo-heirloom")
+        {
+            self.owned_items.push("halo-heirloom".to_string());
+        }
+        self.equipped_cosmetic = Some("halo-heirloom".to_string());
+        self.furniture = retained_furniture;
+        self.album = retained_album;
+        self.album_records = retained_album_records;
+        self.prestige_count = next_prestige;
+        self.xp_bonus_multiplier = next_xp_bonus;
+        self.record_album_entry(0);
+        Ok(())
     }
 
     /// Applies one token usage event: converts weighted tokens to Food,
@@ -299,7 +423,7 @@ impl EconomyState {
     /// Pantry. Mood is evaluated from fullness *before* this meal.
     fn eat_one_food(&mut self, config: &EconomyConfig) {
         let mood = mood_from_fullness(self.fullness);
-        let xp_gain = config.xp_per_food as f64 * mood_multiplier(mood);
+        let xp_gain = config.xp_per_food as f64 * mood_multiplier(mood) * self.xp_bonus_multiplier;
         self.xp += xp_gain;
         self.fullness = (self.fullness + config.fullness_per_food as f64).min(100.0);
     }
@@ -411,16 +535,37 @@ impl EconomyState {
         self.evolution_branch = branch;
         self.sparks += evolution_reward_sparks(next_stage);
 
-        let album_key = branch.as_album_key(next_stage);
-        if !self.album.contains(&album_key) {
-            self.album.push(album_key.clone());
-        }
+        let album_key = self.record_album_entry(level);
         self.pending_evolution = Some(EvolutionEvent {
             stage: next_stage,
             branch,
             level,
             album_key,
         });
+    }
+
+    fn record_album_entry(&mut self, level: u32) -> String {
+        let key = album_key(
+            self.evolution_stage,
+            self.evolution_branch,
+            self.prestige_count,
+        );
+        if !self.album.contains(&key) {
+            self.album.push(key.clone());
+        }
+        if !self.album_records.iter().any(|record| record.key == key) {
+            self.album_records.push(AlbumRecord {
+                key: key.clone(),
+                stage: self.evolution_stage,
+                branch: self.evolution_branch,
+                reached_day: self.current_day.to_string(),
+                level,
+                xp: self.xp,
+                sparks: self.sparks,
+                prestige_count: self.prestige_count,
+            });
+        }
+        key
     }
 }
 
@@ -431,6 +576,15 @@ fn evolution_reward_sparks(stage: EvolutionStage) -> u32 {
         EvolutionStage::Juvenile => 5,
         EvolutionStage::Adult => 10,
         EvolutionStage::Elder => 20,
+    }
+}
+
+fn default_furniture_x(item_id: &str) -> f64 {
+    match item_id {
+        "furniture-bed" => 0.18,
+        "furniture-plant" => 0.78,
+        "furniture-perch" => 0.5,
+        _ => 0.5,
     }
 }
 
@@ -729,9 +883,9 @@ mod tests {
         );
         assert_eq!(state.evolution_stage, EvolutionStage::Adult);
         assert_eq!(state.evolution_branch, EvolutionBranch::Nocturnal);
-        assert!(state.album.contains(&"hatchling:sprout".to_string()));
-        assert!(state.album.contains(&"juvenile:nocturnal".to_string()));
-        assert!(state.album.contains(&"adult:nocturnal".to_string()));
+        assert!(state.album.contains(&"hatchling:sprout:p0".to_string()));
+        assert!(state.album.contains(&"juvenile:nocturnal:p0".to_string()));
+        assert!(state.album.contains(&"adult:nocturnal:p0".to_string()));
         assert_eq!(
             state.pending_evolution.as_ref().unwrap().stage,
             EvolutionStage::Adult
@@ -744,5 +898,58 @@ mod tests {
             state.daily_quest.completed,
             "quests are auto-detected from food/night usage without UI interaction"
         );
+    }
+
+    #[test]
+    fn buying_equipping_and_placing_shop_items_updates_persistent_state() {
+        let mut state = EconomyState::new(day(2026, 1, 1), 0);
+        state.sparks = 40;
+
+        state.buy_item("hat-leaf").unwrap();
+        state.equip_item("hat-leaf").unwrap();
+        state.buy_item("food-sushi").unwrap();
+        state.equip_item("food-sushi").unwrap();
+        state.buy_item("furniture-bed").unwrap();
+        state.place_furniture("furniture-bed", 0.9).unwrap();
+
+        assert_eq!(state.sparks, 10);
+        assert_eq!(state.equipped_cosmetic.as_deref(), Some("hat-leaf"));
+        assert_eq!(state.equipped_food_skin.as_deref(), Some("food-sushi"));
+        assert_eq!(
+            state
+                .furniture
+                .iter()
+                .find(|item| item.item_id == "furniture-bed")
+                .unwrap()
+                .x,
+            0.9
+        );
+        assert_eq!(state.buy_item("hat-leaf"), Err(ShopError::AlreadyOwned));
+    }
+
+    #[test]
+    fn prestige_requires_elder_resets_pet_and_preserves_album_legacy() {
+        let mut state = EconomyState::new(day(2026, 1, 1), 0);
+        state.sparks = 25;
+        state.xp = 100_000.0;
+        state.evolution_stage = EvolutionStage::Elder;
+        state.evolution_branch = EvolutionBranch::Scholar;
+        state.record_album_entry(45);
+        let album_before = state.album_records.clone();
+
+        state.prestige(day(2026, 3, 1)).unwrap();
+
+        assert_eq!(state.evolution_stage, EvolutionStage::Egg);
+        assert_eq!(state.xp, 0.0);
+        assert_eq!(state.sparks, 25);
+        assert_eq!(state.prestige_count, 1);
+        assert_eq!(state.xp_bonus_multiplier, 1.1);
+        assert!(state.owned_items.contains(&"halo-heirloom".to_string()));
+        assert_eq!(state.equipped_cosmetic.as_deref(), Some("halo-heirloom"));
+        assert!(state.album_records.len() > album_before.len());
+        assert!(state
+            .album_records
+            .iter()
+            .any(|record| record.stage == EvolutionStage::Elder));
     }
 }

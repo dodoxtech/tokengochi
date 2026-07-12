@@ -6,8 +6,13 @@ mod tray;
 mod watcher;
 
 use chrono::{Datelike, Duration, Local, TimeZone, Timelike};
-use economy::{level_for_xp, mood_from_fullness, DailyQuestState, EconomyConfig, EconomyState};
-use pet::{EvolutionBranch, EvolutionEvent, EvolutionStage, UsagePatternSample};
+use economy::{
+    level_for_xp, mood_from_fullness, DailyQuestState, EconomyConfig, EconomyState, ShopError,
+};
+use pet::{
+    EvolutionBranch, EvolutionEvent, EvolutionStage, FurniturePlacement, ShopItem,
+    UsagePatternSample, SHOP_CATALOG,
+};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc, Mutex,
@@ -51,6 +56,13 @@ struct PetStatePayload {
     weekly_target: u32,
     weekly_milestone_claimed: bool,
     album: Vec<String>,
+    album_records: Vec<pet::AlbumRecord>,
+    owned_items: Vec<String>,
+    equipped_cosmetic: Option<String>,
+    equipped_food_skin: Option<String>,
+    furniture: Vec<FurniturePlacement>,
+    prestige_count: u32,
+    xp_bonus_multiplier: f64,
     pending_evolution: Option<EvolutionEvent>,
     pending_food: u32,
     pantry: u32,
@@ -96,6 +108,7 @@ struct DashboardPayload {
     providers: ProviderStatusPayload,
     stats: StatsPayload,
     monitor_count: u32,
+    shop_catalog: &'static [ShopItem],
 }
 
 /// Returns the currently loaded economy balance constants. See
@@ -250,6 +263,97 @@ fn pet_ate(
     Ok(payload)
 }
 
+#[tauri::command]
+fn buy_shop_item(
+    app: AppHandle,
+    item_id: String,
+    state: tauri::State<GameRuntimeState>,
+) -> Result<PetStatePayload, String> {
+    mutate_pet_state(app, state, |runtime| {
+        runtime
+            .economy
+            .buy_item(&item_id)
+            .map_err(shop_error_message)
+    })
+}
+
+#[tauri::command]
+fn equip_shop_item(
+    app: AppHandle,
+    item_id: String,
+    state: tauri::State<GameRuntimeState>,
+) -> Result<PetStatePayload, String> {
+    mutate_pet_state(app, state, |runtime| {
+        runtime
+            .economy
+            .equip_item(&item_id)
+            .map_err(shop_error_message)
+    })
+}
+
+#[tauri::command]
+fn place_furniture(
+    app: AppHandle,
+    item_id: String,
+    x: f64,
+    state: tauri::State<GameRuntimeState>,
+) -> Result<PetStatePayload, String> {
+    mutate_pet_state(app, state, |runtime| {
+        runtime
+            .economy
+            .place_furniture(&item_id, x)
+            .map_err(shop_error_message)
+    })
+}
+
+#[tauri::command]
+fn prestige_pet(
+    app: AppHandle,
+    state: tauri::State<GameRuntimeState>,
+) -> Result<PetStatePayload, String> {
+    mutate_pet_state(app, state, |runtime| {
+        runtime
+            .economy
+            .prestige(Local::now().date_naive())
+            .map_err(shop_error_message)
+    })
+}
+
+fn mutate_pet_state<F>(
+    app: AppHandle,
+    state: tauri::State<GameRuntimeState>,
+    mutate: F,
+) -> Result<PetStatePayload, String>
+where
+    F: FnOnce(&mut GameRuntime) -> Result<(), String>,
+{
+    let mut runtime = state
+        .0
+        .lock()
+        .map_err(|_| "game runtime mutex poisoned".to_string())?;
+    reconcile_and_persist(&mut runtime).map_err(|err| err.to_string())?;
+    mutate(&mut runtime)?;
+    let now_unix = Local::now().timestamp();
+    runtime
+        .state_store
+        .save_economy_state(&runtime.economy, now_unix)
+        .map_err(|err| err.to_string())?;
+    let payload = pet_state_payload(&runtime);
+    let _ = app.emit("pet_state_changed", payload.clone());
+    Ok(payload)
+}
+
+fn shop_error_message(error: ShopError) -> String {
+    match error {
+        ShopError::UnknownItem => "unknown shop item".to_string(),
+        ShopError::AlreadyOwned => "item already owned".to_string(),
+        ShopError::NotEnoughSparks => "not enough Sparks".to_string(),
+        ShopError::NotOwned => "item is not owned".to_string(),
+        ShopError::WrongItemKind => "item cannot be used that way".to_string(),
+        ShopError::PrestigeRequiresElder => "prestige requires an Elder pet".to_string(),
+    }
+}
+
 fn now_parts() -> (i64, chrono::NaiveDate) {
     let now = Local::now();
     (now.timestamp(), now.date_naive())
@@ -284,6 +388,13 @@ fn pet_state_payload(runtime: &GameRuntime) -> PetStatePayload {
         weekly_target: runtime.economy.weekly_target,
         weekly_milestone_claimed: runtime.economy.weekly_milestone_claimed,
         album: runtime.economy.album.clone(),
+        album_records: runtime.economy.album_records.clone(),
+        owned_items: runtime.economy.owned_items.clone(),
+        equipped_cosmetic: runtime.economy.equipped_cosmetic.clone(),
+        equipped_food_skin: runtime.economy.equipped_food_skin.clone(),
+        furniture: runtime.economy.furniture.clone(),
+        prestige_count: runtime.economy.prestige_count,
+        xp_bonus_multiplier: runtime.economy.xp_bonus_multiplier,
         pending_evolution: runtime.economy.pending_evolution.clone(),
         pending_food: runtime.economy.food_inventory,
         pantry: runtime.economy.pantry,
@@ -326,6 +437,7 @@ fn dashboard_payload(app: &AppHandle, runtime: &GameRuntime) -> Result<Dashboard
             streak_days: runtime.economy.streak_days,
         },
         monitor_count: available_monitor_count(app),
+        shop_catalog: SHOP_CATALOG,
     })
 }
 
@@ -532,6 +644,10 @@ pub fn run() {
             get_pet_state,
             get_dashboard_state,
             pet_ate,
+            buy_shop_item,
+            equip_shop_item,
+            place_furniture,
+            prestige_pet,
             update_settings,
             complete_onboarding,
             set_tracking_paused,

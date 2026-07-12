@@ -28,13 +28,21 @@ const DROP_SPEED = 520;
 const EAT_MS = 950;
 
 type Mood = "Full" | "Content" | "Peckish" | "Hungry" | "Starving";
-type PetMode = "idle" | "seek" | "eat" | "happy";
+type PetMode = "idle" | "seek" | "eat" | "happy" | "sleep";
+
+interface FurniturePlacement {
+  itemId: string;
+  x: number;
+}
 
 interface PetStatePayload {
   fullness: number;
   mood: Mood;
   xp: number;
   level: number;
+  equippedCosmetic?: string | null;
+  equippedFoodSkin?: string | null;
+  furniture: FurniturePlacement[];
   pendingFood: number;
   pantry: number;
   foodEarnedToday: number;
@@ -74,6 +82,7 @@ let state: PetStatePayload = {
   mood: "Full",
   xp: 0,
   level: 0,
+  furniture: [],
   pendingFood: 0,
   pantry: 0,
   foodEarnedToday: 0,
@@ -169,7 +178,24 @@ function updateFood(dtMs: number): void {
 function updatePet(dtMs: number, now: number): void {
   const target = foods.find((food) => !food.eaten && food.y >= food.targetY);
   if (!target) {
-    pet.mode = now < pet.happyUntil ? "happy" : "idle";
+    if (now < pet.happyUntil) {
+      pet.mode = "happy";
+      return;
+    }
+    const bed = state.furniture.find((item) => item.itemId === "furniture-bed");
+    if (bed) {
+      const bedX = furnitureX(bed) + 10;
+      const dx = bedX - pet.x;
+      pet.facing = dx >= 0 ? 1 : -1;
+      if (Math.abs(dx) > 5) {
+        pet.mode = "seek";
+        pet.x += Math.sign(dx) * Math.min(Math.abs(dx), (WALK_SPEED * 0.62 * dtMs) / 1000);
+        return;
+      }
+      pet.mode = "sleep";
+      return;
+    }
+    pet.mode = "idle";
     return;
   }
 
@@ -217,7 +243,7 @@ function updatePet(dtMs: number, now: number): void {
 }
 
 function drawPet(now: number): void {
-  const bob = pet.mode === "seek" ? Math.round(Math.sin(now / 95) * 3) : Math.round(Math.sin(now / 420) * 2);
+  const bob = pet.mode === "sleep" ? 2 : pet.mode === "seek" ? Math.round(Math.sin(now / 95) * 3) : Math.round(Math.sin(now / 420) * 2);
   const squash = pet.mode === "eat" ? Math.sin((now - pet.eatStartedAt) / 80) * 3 : 0;
   const happyHop = pet.mode === "happy" ? Math.abs(Math.sin(now / 115)) * 12 : 0;
   const x = Math.round(pet.x);
@@ -248,7 +274,7 @@ function drawPet(now: number): void {
   ctx.fill();
 
   ctx.fillStyle = "#1a1c2c";
-  if (state.mood === "Starving") {
+  if (state.mood === "Starving" || pet.mode === "sleep") {
     ctx.fillRect(-13, -7, 7, 2);
     ctx.fillRect(8, -7, 7, 2);
   } else {
@@ -273,7 +299,35 @@ function drawPet(now: number): void {
   ctx.fillRect(-14, 24, 13, 5);
   ctx.fillRect(8, 24, 13, 5);
 
+  drawCosmetic(now);
+
   ctx.restore();
+}
+
+function drawCosmetic(now: number): void {
+  switch (state.equippedCosmetic) {
+    case "hat-leaf":
+      ctx.fillStyle = "#1a1c2c";
+      ctx.fillRect(-18, -28, 34, 5);
+      ctx.fillStyle = "#38b764";
+      ctx.fillRect(-14, -33, 26, 7);
+      ctx.fillStyle = "#a7f070";
+      ctx.fillRect(4, -37, 13, 5);
+      break;
+    case "scarf-sunset":
+      ctx.fillStyle = "#b13e53";
+      ctx.fillRect(-22, 8, 43, 6);
+      ctx.fillStyle = "#ef7d57";
+      ctx.fillRect(12, 13, 8, 15);
+      break;
+    case "halo-heirloom":
+      ctx.strokeStyle = "#ffcd75";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(0, -34 + Math.sin(now / 300) * 1.5, 20, 5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+  }
 }
 
 function moodColor(mood: Mood): string {
@@ -300,14 +354,69 @@ function drawFood(now: number): void {
     const x = Math.round(food.x);
     const y = Math.round(food.y + pulse);
 
+    drawFoodSkin(x, y);
+  }
+}
+
+function drawFoodSkin(x: number, y: number): void {
+  if (state.equippedFoodSkin === "food-sushi") {
     ctx.fillStyle = "#1a1c2c";
-    ctx.fillRect(x + 3, y + 2, 12, 14);
+    ctx.fillRect(x + 1, y + 5, 16, 9);
+    ctx.fillStyle = "#f4f4f4";
+    ctx.fillRect(x + 2, y + 6, 14, 7);
     ctx.fillStyle = "#b13e53";
-    ctx.fillRect(x + 4, y + 3, 10, 12);
-    ctx.fillStyle = "#ef7d57";
-    ctx.fillRect(x + 6, y + 4, 6, 10);
-    ctx.fillStyle = "#a7f070";
-    ctx.fillRect(x + 9, y, 5, 4);
+    ctx.fillRect(x + 7, y + 7, 5, 5);
+    return;
+  }
+  if (state.equippedFoodSkin === "food-banh-mi") {
+    ctx.fillStyle = "#1a1c2c";
+    ctx.fillRect(x + 1, y + 4, 16, 11);
+    ctx.fillStyle = "#ffcd75";
+    ctx.fillRect(x + 2, y + 5, 14, 9);
+    ctx.fillStyle = "#38b764";
+    ctx.fillRect(x + 5, y + 7, 9, 2);
+    return;
+  }
+  ctx.fillStyle = "#1a1c2c";
+  ctx.fillRect(x + 3, y + 2, 12, 14);
+  ctx.fillStyle = "#b13e53";
+  ctx.fillRect(x + 4, y + 3, 10, 12);
+  ctx.fillStyle = "#ef7d57";
+  ctx.fillRect(x + 6, y + 4, 6, 10);
+  ctx.fillStyle = "#a7f070";
+  ctx.fillRect(x + 9, y, 5, 4);
+}
+
+function furnitureX(item: FurniturePlacement): number {
+  return clamp(item.x, 0.05, 0.95) * Math.max(1, window.innerWidth - 72);
+}
+
+function drawFurniture(): void {
+  for (const item of state.furniture) {
+    const x = Math.round(furnitureX(item));
+    const y = groundY() + PET_SIZE - 20;
+    if (item.itemId === "furniture-bed") {
+      ctx.fillStyle = "#1a1c2c";
+      ctx.fillRect(x, y + 15, 78, 14);
+      ctx.fillStyle = "#29366f";
+      ctx.fillRect(x + 5, y + 8, 68, 16);
+      ctx.fillStyle = "#73eff7";
+      ctx.fillRect(x + 9, y + 4, 24, 10);
+    } else if (item.itemId === "furniture-plant") {
+      ctx.fillStyle = "#1a1c2c";
+      ctx.fillRect(x + 12, y + 14, 22, 18);
+      ctx.fillStyle = "#ef7d57";
+      ctx.fillRect(x + 15, y + 17, 16, 14);
+      ctx.fillStyle = "#38b764";
+      ctx.fillRect(x + 7, y + 4, 12, 12);
+      ctx.fillStyle = "#a7f070";
+      ctx.fillRect(x + 24, y, 14, 16);
+    } else if (item.itemId === "furniture-perch") {
+      ctx.fillStyle = "#1a1c2c";
+      ctx.fillRect(x, y + 2, 70, 8);
+      ctx.fillStyle = "#566c86";
+      ctx.fillRect(x + 4, y + 1, 62, 5);
+    }
   }
 }
 
@@ -343,6 +452,7 @@ function drawTooltip(): void {
 
 function draw(now: number): void {
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+  drawFurniture();
   drawFood(now);
   drawPet(now);
   drawTooltip();

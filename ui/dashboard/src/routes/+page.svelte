@@ -10,6 +10,25 @@
     mood: string;
     xp: number;
     level: number;
+    evolutionStage: string;
+    evolutionBranch: string;
+    sparks: number;
+    ownedItems: string[];
+    equippedCosmetic?: string | null;
+    equippedFoodSkin?: string | null;
+    furniture: { itemId: string; x: number }[];
+    albumRecords: {
+      key: string;
+      stage: string;
+      branch: string;
+      reachedDay: string;
+      level: number;
+      xp: number;
+      sparks: number;
+      prestigeCount: number;
+    }[];
+    prestigeCount: number;
+    xpBonusMultiplier: number;
     pendingFood: number;
     pantry: number;
     foodEarnedToday: number;
@@ -28,12 +47,14 @@
   };
   type TokenTotals = { input: number; output: number; cacheRead: number; total: number };
   type FoodStats = { today: number; week: number };
+  type ShopItem = { id: string; label: string; kind: "Cosmetic" | "FoodSkin" | "Furniture" | "Heirloom"; priceSparks: number };
   type DashboardState = {
     pet: PetState;
     settings: AppSettings;
     providers: { claudeCodeDetected: boolean };
     stats: { food: FoodStats; todayTokens: TokenTotals; weekTokens: TokenTotals; streakDays: number };
     monitorCount: number;
+    shopCatalog: ShopItem[];
   };
 
   const starterEggs = [
@@ -133,6 +154,25 @@
     await relaunch();
   }
 
+  async function applyPetCommand(command: string, args: Record<string, unknown> = {}) {
+    if (!dashboard) return;
+    try {
+      error = "";
+      dashboard.pet = await invoke<PetState>(command, args);
+      await refresh();
+    } catch (cause) {
+      error = String(cause);
+    }
+  }
+
+  function owns(item: ShopItem): boolean {
+    return dashboard?.pet.ownedItems.includes(item.id) ?? false;
+  }
+
+  function furniturePlacement(itemId: string): number {
+    return dashboard?.pet.furniture.find((item) => item.itemId === itemId)?.x ?? 0.5;
+  }
+
   onMount(() => {
     void refresh();
     const unlisten = listen<boolean>("tracking_changed", (event) => {
@@ -205,7 +245,7 @@
         <article>
           <span>Level</span>
           <strong>{dashboard.pet.level}</strong>
-          <small>{formatNumber(dashboard.pet.xp)} XP</small>
+          <small>{dashboard.pet.evolutionStage} · {dashboard.pet.evolutionBranch}</small>
         </article>
         <article>
           <span>Fullness</span>
@@ -232,6 +272,85 @@
           <strong>{dashboard.pet.pantry}</strong>
           <small>{dashboard.pet.pendingFood} waiting</small>
         </article>
+        <article>
+          <span>Sparks</span>
+          <strong>{dashboard.pet.sparks}</strong>
+          <small>{formatNumber(dashboard.pet.xp)} XP · x{dashboard.pet.xpBonusMultiplier.toFixed(1)}</small>
+        </article>
+      </section>
+
+      <section class="panel shop">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">Shop</p>
+            <h2>Sparks sinks</h2>
+          </div>
+          <span>{dashboard.pet.ownedItems.length} owned</span>
+        </div>
+        <div class="shop-grid">
+          {#each dashboard.shopCatalog as item}
+            <article class="shop-item">
+              <span>{item.kind}</span>
+              <strong>{item.label}</strong>
+              <small>{item.priceSparks} Sparks</small>
+              {#if owns(item)}
+                {#if item.kind === "Cosmetic" || item.kind === "FoodSkin" || item.kind === "Heirloom"}
+                  <button class="ghost" onclick={() => applyPetCommand("equip_shop_item", { itemId: item.id })}>
+                    {dashboard.pet.equippedCosmetic === item.id || dashboard.pet.equippedFoodSkin === item.id ? "Equipped" : "Equip"}
+                  </button>
+                {:else}
+                  <label class="mini-field">
+                    <span>Position</span>
+                    <input
+                      type="range"
+                      min="5"
+                      max="95"
+                      value={Math.round(furniturePlacement(item.id) * 100)}
+                      oninput={(event) =>
+                        applyPetCommand("place_furniture", {
+                          itemId: item.id,
+                          x: Number(event.currentTarget.value) / 100,
+                        })}
+                    />
+                  </label>
+                {/if}
+              {:else}
+                <button
+                  class="primary"
+                  disabled={dashboard.pet.sparks < item.priceSparks || item.kind === "Heirloom"}
+                  onclick={() => applyPetCommand("buy_shop_item", { itemId: item.id })}
+                >
+                  Buy
+                </button>
+              {/if}
+            </article>
+          {/each}
+        </div>
+      </section>
+
+      <section class="panel album-panel">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">Album</p>
+            <h2>Collection</h2>
+          </div>
+          <button
+            class="primary"
+            disabled={dashboard.pet.evolutionStage !== "Elder"}
+            onclick={() => applyPetCommand("prestige_pet")}
+          >
+            Prestige
+          </button>
+        </div>
+        <div class="album-grid">
+          {#each dashboard.pet.albumRecords as record}
+            <article class="album-card">
+              <span>{record.reachedDay}</span>
+              <strong>{record.stage}</strong>
+              <small>{record.branch} · L{record.level} · P{record.prestigeCount}</small>
+            </article>
+          {/each}
+        </div>
       </section>
 
       <section class="panel settings">
@@ -498,6 +617,33 @@
     display: grid;
     gap: 12px;
   }
+  .shop,
+  .album-panel {
+    display: grid;
+    gap: 14px;
+  }
+  .shop-grid,
+  .album-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .shop-item,
+  .album-card {
+    min-height: 0;
+  }
+  .shop-item button {
+    margin-top: 6px;
+  }
+  .mini-field {
+    display: grid;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .mini-field span {
+    color: #aebbd1;
+    font-size: 12px;
+  }
   .toggle,
   .field {
     align-items: center;
@@ -546,7 +692,9 @@
       flex-direction: column;
     }
     .stat-grid,
-    .egg-row {
+    .egg-row,
+    .shop-grid,
+    .album-grid {
       grid-template-columns: 1fr;
     }
     .field {

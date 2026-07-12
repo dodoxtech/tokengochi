@@ -2,8 +2,9 @@
 //!
 //! See `docs/knowledge/game-economy.md` §3-4 and `docs/architecture.md`
 //! §Data Flow. Behavior is tracked in `docs/tasks/done/0004-economy-engine-core.md`,
-//! `docs/tasks/backlog/0005-sprite-renderer-behavior-ai.md`, and
-//! `docs/tasks/backlog/0009-evolution-streaks-quests.md`.
+//! `docs/tasks/backlog/0005-sprite-renderer-behavior-ai.md`,
+//! `docs/tasks/done/0009-evolution-streaks-quests.md`, and
+//! `docs/tasks/backlog/0010-cosmetics-shop-collection-album.md`.
 
 /// Evolution stages, in order. See `docs/knowledge/game-economy.md` §4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -104,6 +105,102 @@ pub struct EvolutionEvent {
     pub branch: EvolutionBranch,
     pub level: u32,
     pub album_key: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ShopItemKind {
+    Cosmetic,
+    FoodSkin,
+    Furniture,
+    Heirloom,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShopItem {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub kind: ShopItemKind,
+    pub price_sparks: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FurniturePlacement {
+    pub item_id: String,
+    pub x: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlbumRecord {
+    pub key: String,
+    pub stage: EvolutionStage,
+    pub branch: EvolutionBranch,
+    pub reached_day: String,
+    pub level: u32,
+    pub xp: f64,
+    pub sparks: u32,
+    pub prestige_count: u32,
+}
+
+pub const SHOP_CATALOG: &[ShopItem] = &[
+    ShopItem {
+        id: "hat-leaf",
+        label: "Leaf Cap",
+        kind: ShopItemKind::Cosmetic,
+        price_sparks: 5,
+    },
+    ShopItem {
+        id: "scarf-sunset",
+        label: "Sunset Scarf",
+        kind: ShopItemKind::Cosmetic,
+        price_sparks: 12,
+    },
+    ShopItem {
+        id: "halo-heirloom",
+        label: "Heirloom Halo",
+        kind: ShopItemKind::Heirloom,
+        price_sparks: 0,
+    },
+    ShopItem {
+        id: "food-sushi",
+        label: "Sushi Food",
+        kind: ShopItemKind::FoodSkin,
+        price_sparks: 10,
+    },
+    ShopItem {
+        id: "food-banh-mi",
+        label: "Banh Mi Food",
+        kind: ShopItemKind::FoodSkin,
+        price_sparks: 10,
+    },
+    ShopItem {
+        id: "furniture-bed",
+        label: "Tiny Bed",
+        kind: ShopItemKind::Furniture,
+        price_sparks: 15,
+    },
+    ShopItem {
+        id: "furniture-plant",
+        label: "Desk Plant",
+        kind: ShopItemKind::Furniture,
+        price_sparks: 15,
+    },
+    ShopItem {
+        id: "furniture-perch",
+        label: "Monitor Perch",
+        kind: ShopItemKind::Furniture,
+        price_sparks: 25,
+    },
+];
+
+pub fn shop_item(id: &str) -> Option<&'static ShopItem> {
+    SHOP_CATALOG.iter().find(|item| item.id == id)
+}
+
+pub fn album_key(stage: EvolutionStage, branch: EvolutionBranch, prestige_count: u32) -> String {
+    format!("{}:p{prestige_count}", branch.as_album_key(stage))
 }
 
 pub fn stage_for_level(level: u32) -> EvolutionStage {

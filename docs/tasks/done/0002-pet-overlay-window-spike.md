@@ -1,6 +1,6 @@
 ---
 type: task
-status: active
+status: done
 priority: P0
 delivery_order: 0002
 estimate: 3d

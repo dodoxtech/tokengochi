@@ -5,7 +5,10 @@
 //! survives app restarts.
 
 use crate::economy::{DailyQuestState, EconomyState};
-use crate::pet::{EvolutionBranch, EvolutionEvent, EvolutionStage, UsagePatternStats};
+use crate::pet::{
+    album_key, AlbumRecord, EvolutionBranch, EvolutionEvent, EvolutionStage, FurniturePlacement,
+    UsagePatternStats,
+};
 use chrono::NaiveDate;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
@@ -82,6 +85,13 @@ impl GameStateStore {
                 evolution_stage       TEXT NOT NULL DEFAULT 'Egg',
                 evolution_branch      TEXT NOT NULL DEFAULT 'Sprout',
                 album_json            TEXT NOT NULL DEFAULT '',
+                album_records_json    TEXT NOT NULL DEFAULT '',
+                owned_items_json      TEXT NOT NULL DEFAULT '',
+                equipped_cosmetic     TEXT,
+                equipped_food_skin    TEXT,
+                furniture_json        TEXT NOT NULL DEFAULT '',
+                prestige_count        INTEGER NOT NULL DEFAULT 0,
+                xp_bonus_multiplier   REAL NOT NULL DEFAULT 1.0,
                 pending_evolution_json TEXT,
                 last_reconciled_unix  INTEGER NOT NULL,
                 updated_at_unix       INTEGER NOT NULL
@@ -121,7 +131,9 @@ impl GameStateStore {
                         last_activity_day, weekly_food_earned, weekly_target,
                         weekly_milestone_claimed, daily_quest_json, usage_stats_json,
                         evolution_stage, evolution_branch, album_json,
-                        pending_evolution_json, last_reconciled_unix
+                        album_records_json, owned_items_json, equipped_cosmetic,
+                        equipped_food_skin, furniture_json, prestige_count,
+                        xp_bonus_multiplier, pending_evolution_json, last_reconciled_unix
                  FROM economy_state
                  WHERE id = 1",
                 [],
@@ -146,7 +158,10 @@ impl GameStateStore {
                     let evolution_stage_raw: String = row.get(16)?;
                     let evolution_branch_raw: String = row.get(17)?;
                     let album_raw: String = row.get(18)?;
-                    let pending_evolution_raw: Option<String> = row.get(19)?;
+                    let album_records_raw: String = row.get(19)?;
+                    let owned_items_raw: String = row.get(20)?;
+                    let furniture_raw: String = row.get(23)?;
+                    let pending_evolution_raw: Option<String> = row.get(26)?;
 
                     Ok(EconomyState {
                         current_day,
@@ -176,12 +191,30 @@ impl GameStateStore {
                             EvolutionBranch::Sprout,
                         ),
                         album: json_or_default(&album_raw, || {
-                            vec![EvolutionBranch::Sprout.as_album_key(EvolutionStage::Egg)]
+                            vec![album_key(EvolutionStage::Egg, EvolutionBranch::Sprout, 0)]
                         }),
+                        album_records: json_or_default(&album_records_raw, || {
+                            vec![AlbumRecord {
+                                key: album_key(EvolutionStage::Egg, EvolutionBranch::Sprout, 0),
+                                stage: EvolutionStage::Egg,
+                                branch: EvolutionBranch::Sprout,
+                                reached_day: current_day.to_string(),
+                                level: 0,
+                                xp: row.get(6).unwrap_or(0.0),
+                                sparks: row.get::<_, i64>(7).unwrap_or(0) as u32,
+                                prestige_count: row.get::<_, i64>(24).unwrap_or(0) as u32,
+                            }]
+                        }),
+                        owned_items: json_or_default(&owned_items_raw, Vec::<String>::new),
+                        equipped_cosmetic: row.get(21)?,
+                        equipped_food_skin: row.get(22)?,
+                        furniture: json_or_default(&furniture_raw, Vec::<FurniturePlacement>::new),
+                        prestige_count: row.get::<_, i64>(24)? as u32,
+                        xp_bonus_multiplier: row.get(25)?,
                         pending_evolution: pending_evolution_raw
                             .as_deref()
                             .and_then(|raw| serde_json::from_str::<EvolutionEvent>(raw).ok()),
-                        last_reconciled_unix: row.get(20)?,
+                        last_reconciled_unix: row.get(27)?,
                     })
                 },
             )
@@ -195,11 +228,14 @@ impl GameStateStore {
                 food_inventory, fullness, xp, sparks, streak_days, streak_freezes,
                 last_activity_day, weekly_food_earned, weekly_target,
                 weekly_milestone_claimed, daily_quest_json, usage_stats_json,
-                evolution_stage, evolution_branch, album_json, pending_evolution_json,
+                evolution_stage, evolution_branch, album_json, album_records_json,
+                owned_items_json, equipped_cosmetic, equipped_food_skin, furniture_json,
+                prestige_count, xp_bonus_multiplier, pending_evolution_json,
                 last_reconciled_unix, updated_at_unix
              )
              VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                     ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+                     ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23,
+                     ?24, ?25, ?26, ?27, ?28, ?29)
              ON CONFLICT(id) DO UPDATE SET
                 current_day = excluded.current_day,
                 food_earned_today = excluded.food_earned_today,
@@ -220,6 +256,13 @@ impl GameStateStore {
                 evolution_stage = excluded.evolution_stage,
                 evolution_branch = excluded.evolution_branch,
                 album_json = excluded.album_json,
+                album_records_json = excluded.album_records_json,
+                owned_items_json = excluded.owned_items_json,
+                equipped_cosmetic = excluded.equipped_cosmetic,
+                equipped_food_skin = excluded.equipped_food_skin,
+                furniture_json = excluded.furniture_json,
+                prestige_count = excluded.prestige_count,
+                xp_bonus_multiplier = excluded.xp_bonus_multiplier,
                 pending_evolution_json = excluded.pending_evolution_json,
                 last_reconciled_unix = excluded.last_reconciled_unix,
                 updated_at_unix = excluded.updated_at_unix",
@@ -243,6 +286,13 @@ impl GameStateStore {
                 serde_json::to_string(&state.evolution_stage).unwrap_or_default(),
                 serde_json::to_string(&state.evolution_branch).unwrap_or_default(),
                 serde_json::to_string(&state.album).unwrap_or_default(),
+                serde_json::to_string(&state.album_records).unwrap_or_default(),
+                serde_json::to_string(&state.owned_items).unwrap_or_default(),
+                state.equipped_cosmetic.clone(),
+                state.equipped_food_skin.clone(),
+                serde_json::to_string(&state.furniture).unwrap_or_default(),
+                state.prestige_count as i64,
+                state.xp_bonus_multiplier,
                 state
                     .pending_evolution
                     .as_ref()
@@ -402,6 +452,13 @@ fn migrate_economy_state_columns(conn: &Connection) -> rusqlite::Result<()> {
         ("evolution_stage", "TEXT NOT NULL DEFAULT 'Egg'"),
         ("evolution_branch", "TEXT NOT NULL DEFAULT 'Sprout'"),
         ("album_json", "TEXT NOT NULL DEFAULT ''"),
+        ("album_records_json", "TEXT NOT NULL DEFAULT ''"),
+        ("owned_items_json", "TEXT NOT NULL DEFAULT ''"),
+        ("equipped_cosmetic", "TEXT"),
+        ("equipped_food_skin", "TEXT"),
+        ("furniture_json", "TEXT NOT NULL DEFAULT ''"),
+        ("prestige_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("xp_bonus_multiplier", "REAL NOT NULL DEFAULT 1.0"),
         ("pending_evolution_json", "TEXT"),
     ];
 
