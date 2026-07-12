@@ -53,5 +53,6 @@ Events are deduplicated by `(provider, message_id)` in the ledger so re-reads ne
 
 ## Open Questions
 
-- Exact JSONL field set varies by Claude Code version — pin against current version in task 0003 and add a fixture corpus.
-- Should cache_creation tokens count? (Currently: yes, at input weight.)
+- Exact JSONL field set varies by Claude Code version — pin against current version in task 0003 and add a fixture corpus. **Still open**: task 0003's implementation (`src-tauri/src/watcher/claude_code.rs`) was written and fixture-tested against the schema documented above, but has not been verified against a real, currently-installed Claude Code version (no live install was available in the implementing environment). Re-verify field names against `~/.claude/projects/**/*.jsonl` on a real machine before relying on this in production, and update the fixtures under `src-tauri/src/watcher/fixtures/claude_code/` if anything differs.
+- Should cache_creation tokens count? (Currently: yes, at input weight.) Implemented as decided: the parser folds `cache_creation_input_tokens` into `TokenEvent.input_tokens` at parse time (see `parse_usage_line`), so the economy engine only ever sees three token buckets (input, output, cache_read), not four.
+- Dedup key: message ids are assumed present on assistant lines (`message.id`); if a line is missing one, the watcher falls back to a synthesized `"<file>:<offset>"` key so dedup-by-offset still holds, but true dedup-by-message-id degrades for that line. Unconfirmed whether real Claude Code lines ever omit `message.id`.
