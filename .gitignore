@@ -1,0 +1,11 @@
+.DS_Store
+*.log
+
+# Rust (src-tauri also has its own)
+/src-tauri/target/
+/src-tauri/gen/schemas/
+
+# Node / SvelteKit (ui/dashboard also has its own)
+/ui/dashboard/node_modules/
+/ui/dashboard/.svelte-kit/
+/ui/dashboard/build/
