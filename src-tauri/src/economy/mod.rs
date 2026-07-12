@@ -7,7 +7,7 @@
 //! `pet_ate` command, ...) are follow-up work - see
 //! `docs/tasks/active/0004-economy-engine-core.md` for exactly what's in
 //! scope here vs. later.
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 mod config;
 mod conversion;

@@ -5,7 +5,7 @@
 //! state/inventory persistence and a real migration framework are follow-on
 //! work; a bare `CREATE TABLE IF NOT EXISTS` is enough for the one table
 //! that exists so far.
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 mod ledger;
 
