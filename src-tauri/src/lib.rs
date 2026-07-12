@@ -4,6 +4,7 @@ mod pet;
 mod store;
 mod tray;
 mod watcher;
+mod window_geometry;
 
 use chrono::{Datelike, Duration, Local, TimeZone, Timelike};
 use economy::{
@@ -34,10 +35,15 @@ struct GameRuntime {
     ledger: Ledger,
     state_store: GameStateStore,
     settings: AppSettings,
+    /// Unix timestamp of the last accepted `pet_petted` call. Not persisted:
+    /// resetting the cooldown across app restarts is an acceptable tradeoff
+    /// for a rate limit whose only purpose is deterring rapid-fire farming.
+    last_petted_unix: i64,
 }
 
 struct GameRuntimeState(Arc<Mutex<GameRuntime>>);
 struct TrackingState(Arc<AtomicBool>);
+struct CalmModeState(Arc<AtomicBool>);
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +106,7 @@ struct StatsPayload {
 #[serde(rename_all = "camelCase")]
 struct OverlaySettingsPayload {
     pet_size: u32,
+    calm_mode: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -153,6 +160,7 @@ fn update_settings(
     settings: AppSettings,
     state: tauri::State<GameRuntimeState>,
     tracking: tauri::State<TrackingState>,
+    calm_mode: tauri::State<CalmModeState>,
 ) -> Result<AppSettings, String> {
     let settings = validate_settings(settings)?;
     let mut runtime = state
@@ -167,6 +175,9 @@ fn update_settings(
     tracking
         .0
         .store(runtime.settings.tracking_paused, Ordering::SeqCst);
+    calm_mode
+        .0
+        .store(runtime.settings.calm_mode, Ordering::SeqCst);
     apply_overlay_settings(&app, &runtime.settings);
     let _ = app.emit("settings_changed", runtime.settings.clone());
     Ok(runtime.settings.clone())
@@ -269,6 +280,37 @@ fn pet_ate(
         .state_store
         .save_economy_state(&runtime.economy, now_unix)
         .map_err(|err| err.to_string())?;
+
+    let payload = pet_state_payload(&runtime);
+    let _ = app.emit("pet_state_changed", payload.clone());
+    Ok(payload)
+}
+
+/// Petting is rate-limited server-side (task 0012) so a player can't farm
+/// happiness by hovering forever; the overlay debounces on its own ~1s
+/// stroke gesture, but this is the authoritative guard.
+const PET_BUMP_COOLDOWN_SECS: i64 = 60;
+
+#[tauri::command]
+fn pet_petted(
+    app: AppHandle,
+    state: tauri::State<GameRuntimeState>,
+) -> Result<PetStatePayload, String> {
+    let mut runtime = state
+        .0
+        .lock()
+        .map_err(|_| "game runtime mutex poisoned".to_string())?;
+    reconcile_and_persist(&mut runtime).map_err(|err| err.to_string())?;
+
+    let now_unix = Local::now().timestamp();
+    if now_unix - runtime.last_petted_unix >= PET_BUMP_COOLDOWN_SECS {
+        runtime.economy.pet_bump();
+        runtime.last_petted_unix = now_unix;
+        runtime
+            .state_store
+            .save_economy_state(&runtime.economy, now_unix)
+            .map_err(|err| err.to_string())?;
+    }
 
     let payload = pet_state_payload(&runtime);
     let _ = app.emit("pet_state_changed", payload.clone());
@@ -494,8 +536,24 @@ fn apply_overlay_settings(app: &AppHandle, settings: &AppSettings) {
         "overlay_settings_changed",
         OverlaySettingsPayload {
             pet_size: settings.pet_size,
+            calm_mode: settings.calm_mode,
         },
     );
+}
+
+/// Polls the platform window-geometry provider at a low, fixed rate (2 Hz,
+/// per the 0012 CPU budget) and pushes the segment list to the overlay.
+/// Skips work entirely while calm mode is on, since climbing is disabled
+/// and there's no reason to pay the enumeration cost.
+fn start_window_geometry_watcher(app: AppHandle, calm_mode: Arc<AtomicBool>) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        if calm_mode.load(Ordering::SeqCst) {
+            continue;
+        }
+        let segments = window_geometry::enumerate_windows();
+        let _ = app.emit("window_segments_changed", segments);
+    });
 }
 
 fn apply_token_event(
@@ -681,12 +739,16 @@ pub fn run() {
                 ledger,
                 state_store,
                 settings: settings.clone(),
+                last_petted_unix: 0,
             }));
             let tracking_paused = Arc::new(AtomicBool::new(settings.tracking_paused));
+            let calm_mode = Arc::new(AtomicBool::new(settings.calm_mode));
 
             app.manage(EconomyConfigState(Mutex::new(config)));
             app.manage(GameRuntimeState(shared.clone()));
             app.manage(TrackingState(tracking_paused.clone()));
+            app.manage(CalmModeState(calm_mode.clone()));
+            start_window_geometry_watcher(app.handle().clone(), calm_mode);
             let settings_shared = shared.clone();
             let persist_tracking_change = Arc::new(move |paused: bool| {
                 let Ok(mut runtime) = settings_shared.lock() else {
@@ -733,6 +795,7 @@ pub fn run() {
             get_pet_state,
             get_dashboard_state,
             pet_ate,
+            pet_petted,
             buy_shop_item,
             equip_shop_item,
             place_furniture,

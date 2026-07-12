@@ -4183,6 +4183,8 @@ name = "tokengochi"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "core-foundation",
+ "core-graphics",
  "dirs 5.0.1",
  "notify",
  "rusqlite",

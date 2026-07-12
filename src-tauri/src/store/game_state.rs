@@ -25,6 +25,7 @@ pub struct AppSettings {
     pub monitor_index: u32,
     pub wayland_fallback: bool,
     pub tracking_paused: bool,
+    pub calm_mode: bool,
 }
 
 impl Default for AppSettings {
@@ -39,6 +40,7 @@ impl Default for AppSettings {
             monitor_index: 0,
             wayland_fallback: false,
             tracking_paused: false,
+            calm_mode: false,
         }
     }
 }
@@ -343,7 +345,7 @@ impl GameStateStore {
             .query_row(
                 "SELECT onboarding_complete, starter_egg, claude_code_enabled,
                         codex_cli_enabled, openai_enabled, pet_size, monitor_index,
-                        wayland_fallback, tracking_paused
+                        wayland_fallback, tracking_paused, calm_mode
                  FROM app_settings
                  WHERE id = 1",
                 [],
@@ -358,6 +360,7 @@ impl GameStateStore {
                         monitor_index: row.get::<_, i64>(6)? as u32,
                         wayland_fallback: row.get::<_, i64>(7)? != 0,
                         tracking_paused: row.get::<_, i64>(8)? != 0,
+                        calm_mode: row.get::<_, i64>(9)? != 0,
                     })
                 },
             )
@@ -370,9 +373,9 @@ impl GameStateStore {
             "INSERT INTO app_settings (
                 id, onboarding_complete, starter_egg, claude_code_enabled,
                 codex_cli_enabled, openai_enabled, pet_size, monitor_index,
-                wayland_fallback, tracking_paused, updated_at_unix
+                wayland_fallback, tracking_paused, calm_mode, updated_at_unix
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT(id) DO UPDATE SET
                 onboarding_complete = excluded.onboarding_complete,
                 starter_egg = excluded.starter_egg,
@@ -383,6 +386,7 @@ impl GameStateStore {
                 monitor_index = excluded.monitor_index,
                 wayland_fallback = excluded.wayland_fallback,
                 tracking_paused = excluded.tracking_paused,
+                calm_mode = excluded.calm_mode,
                 updated_at_unix = excluded.updated_at_unix",
             params![
                 bool_to_i64(settings.onboarding_complete),
@@ -394,6 +398,7 @@ impl GameStateStore {
                 settings.monitor_index as i64,
                 bool_to_i64(settings.wayland_fallback),
                 bool_to_i64(settings.tracking_paused),
+                bool_to_i64(settings.calm_mode),
                 now_unix,
             ],
         )?;
@@ -522,6 +527,7 @@ fn migrate_app_settings_columns(conn: &Connection) -> rusqlite::Result<()> {
     let columns = [
         ("codex_cli_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("openai_enabled", "INTEGER NOT NULL DEFAULT 0"),
+        ("calm_mode", "INTEGER NOT NULL DEFAULT 0"),
     ];
 
     for (name, definition) in columns {
@@ -604,6 +610,7 @@ mod tests {
             monitor_index: 1,
             wayland_fallback: true,
             tracking_paused: true,
+            calm_mode: true,
         };
 
         store.save_app_settings(&settings, 300).unwrap();

@@ -46,6 +46,7 @@
     monitorIndex: number;
     waylandFallback: boolean;
     trackingPaused: boolean;
+    calmMode: boolean;
   };
   type TokenTotals = { input: number; output: number; cacheRead: number; total: number };
   type FoodStats = { today: number; week: number };
@@ -444,6 +445,14 @@
             onchange={() => patchSettings({ waylandFallback: !dashboard?.settings.waylandFallback })}
           />
           <span>Wayland fallback window</span>
+        </label>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={dashboard.settings.calmMode}
+            onchange={() => patchSettings({ calmMode: !dashboard?.settings.calmMode })}
+          />
+          <span>Calm mode (disable climbing &amp; idle gags)</span>
         </label>
 
         <label class="field">

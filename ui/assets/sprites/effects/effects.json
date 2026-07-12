@@ -5,98 +5,98 @@
       "frame": {
         "x": 0,
         "y": 0,
-        "w": 16,
-        "h": 16
+        "w": 224,
+        "h": 308
       },
       "duration": 300
     },
     {
       "filename": "effects 1.aseprite",
       "frame": {
-        "x": 16,
+        "x": 224,
         "y": 0,
-        "w": 16,
-        "h": 16
+        "w": 268,
+        "h": 308
       },
       "duration": 300
     },
     {
       "filename": "effects 2.aseprite",
       "frame": {
-        "x": 32,
+        "x": 492,
         "y": 0,
-        "w": 16,
-        "h": 16
+        "w": 308,
+        "h": 308
       },
       "duration": 300
     },
     {
       "filename": "effects 3.aseprite",
       "frame": {
-        "x": 48,
+        "x": 800,
         "y": 0,
-        "w": 16,
-        "h": 16
+        "w": 272,
+        "h": 308
       },
       "duration": 200
     },
     {
       "filename": "effects 4.aseprite",
       "frame": {
-        "x": 64,
+        "x": 1072,
         "y": 0,
-        "w": 16,
-        "h": 16
+        "w": 228,
+        "h": 308
       },
       "duration": 200
     },
     {
       "filename": "effects 5.aseprite",
       "frame": {
-        "x": 80,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 0,
+        "y": 308,
+        "w": 224,
+        "h": 272
       },
       "duration": 400
     },
     {
       "filename": "effects 6.aseprite",
       "frame": {
-        "x": 96,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 224,
+        "y": 308,
+        "w": 268,
+        "h": 272
       },
       "duration": 80
     },
     {
       "filename": "effects 7.aseprite",
       "frame": {
-        "x": 112,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 492,
+        "y": 308,
+        "w": 308,
+        "h": 272
       },
       "duration": 80
     },
     {
       "filename": "effects 8.aseprite",
       "frame": {
-        "x": 0,
-        "y": 16,
-        "w": 16,
-        "h": 16
+        "x": 800,
+        "y": 308,
+        "w": 272,
+        "h": 272
       },
       "duration": 80
     },
     {
       "filename": "effects 9.aseprite",
       "frame": {
-        "x": 16,
-        "y": 16,
-        "w": 16,
-        "h": 16
+        "x": 1072,
+        "y": 308,
+        "w": 228,
+        "h": 272
       },
       "duration": 80
     }
@@ -107,8 +107,8 @@
     "image": "effects.png",
     "format": "RGBA8888",
     "size": {
-      "w": 128,
-      "h": 32
+      "w": 1300,
+      "h": 580
     },
     "scale": "1",
     "frameTags": [

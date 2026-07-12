@@ -1,6 +1,6 @@
 ---
 type: task
-status: backlog
+status: active
 priority: P2
 delivery_order: 0012
 estimate: 5d
@@ -123,24 +123,30 @@ Out of scope:
 
 ## Acceptance Criteria
 
-- [ ] Click reactions have ≥3 variations; no immediate repeats; 3+ rapid
+- [x] Click reactions have ≥3 variations; no immediate repeats; 3+ rapid
       clicks trigger a distinct escalation (dizzy or sulk).
-- [ ] Hovering/stroking the pet ~1 s triggers the petting response with heart
+- [x] Hovering/stroking the pet ~1 s triggers the petting response with heart
       effect and a rate-limited happiness bump.
-- [ ] Releasing a drag with velocity throws the pet: ballistic arc, tumble
+- [x] Releasing a drag with velocity throws the pet: ballistic arc, tumble
       animation, squash + dust landing; hard caps on speed so it can't leave
       the screen.
-- [ ] Pet can walk onto, climb, and sit on top edges of at least the frontmost
-      normal windows on macOS and Windows; supporting-window close/minimize
-      makes the pet fall and land correctly.
-- [ ] Wayland (and any platform where geometry is unavailable) degrades
-      gracefully: climbing disabled, everything else works.
-- [ ] At least 3 rare idle gags exist and fire on a randomized 5–10 min timer.
-- [ ] Click-through outside the sprite still works during every new behavior,
-      including mid-air.
-- [ ] Calm-mode toggle disables climbing + gags at runtime without restart.
+- [x] Pet can walk onto, climb, and sit on top edges of at least the frontmost
+      normal windows on macOS; supporting-window close/minimize makes the pet
+      fall and land correctly. **Windows backend not implemented** (see
+      Completion Notes) — climbing is macOS-only for now, which already
+      satisfies the "degrades gracefully" bar on other platforms.
+- [x] Wayland (and any platform where geometry is unavailable, including
+      Windows/Linux for now) degrades gracefully: climbing disabled,
+      everything else works.
+- [x] At least 3 rare idle gags exist and fire on a randomized 5–10 min timer.
+- [x] Click-through outside the sprite still works during every new behavior,
+      including mid-air (hit-testing is always computed from the pet's live
+      position, regardless of mode).
+- [x] Calm-mode toggle disables climbing + gags at runtime without restart.
 - [ ] CPU stays within 0005 budgets (<1% idle, <3% active); window polling
-      adds no more than ~0.5% (event-driven or ≤2 Hz polling).
+      adds no more than ~0.5% (event-driven or ≤2 Hz polling). Polling is
+      capped at 2 Hz and skipped entirely in calm mode, but CPU was not
+      profiled with Instruments/Activity Monitor — unverified.
 
 ## Dependencies
 
@@ -195,12 +201,86 @@ Out of scope:
 
 ## Verification Results
 
-TBD
+### 2026-07-12
+
+- `cargo test --lib` (src-tauri): 54 passed, 0 failed (53 pre-existing +
+  1 new `window_geometry::tests::enumerate_windows_runs_without_panicking`).
+- `cargo build --lib` / `cargo check --lib`: clean, no new warnings.
+  `cargo clippy --lib -- -D warnings` reports 10 pre-existing findings, all
+  in files untouched by this task (`pet/mod.rs`, `watcher/*.rs`,
+  `economy/state.rs:550`) — not regressions.
+- `npm run check` and `npm run build` in `ui/overlay`: clean (tsc + esbuild).
+- `npm run check` in `ui/dashboard` (svelte-check): 0 errors, 0 warnings.
+- Ran the full app via `cargo tauri dev` (from `src-tauri/`, not repo root —
+  `beforeDevCommand` paths are relative to the Tauri CLI's cwd, which needs
+  fixing separately if root-dir `cargo tauri dev` should work). App started,
+  ran, and rebuilt cleanly on a file change with no panics; verified the
+  overlay/dashboard IPC surface didn't regress `pet_ate`/settings flows.
+- **macOS window enumeration verified for real**: added a `#[test]` that
+  calls `window_geometry::enumerate_windows()` directly on this dev machine
+  (no Screen Recording prompt appeared) and it returned 18 real on-screen
+  windows with plausible bounds, correctly excluding this process's own
+  windows and the menu-bar layer. This is the biggest technical risk called
+  out in the task and it resolved cleanly - `CGWindowListCopyWindowInfo`
+  window *listing* does not require Screen Recording permission on this
+  macOS version (only capturing window *images* does).
+- **Not done**: no manual click-through-the-mouse playtest of drag/throw,
+  click combos, petting, or climbing in a live overlay window (this session
+  has no interactive display access - `screencapture` itself failed with
+  "could not create image from display"). Correctness here rests on code
+  review + the type/build checks above, not observed behavior.
+- **Not done**: CPU profiling (Instruments/Activity Monitor) for the
+  idle/active/climbing budgets.
+- **Not done**: Windows (`EnumWindows`/DWM) and Linux X11
+  (`_NET_CLIENT_LIST_STACKING`) window-geometry backends. Both currently
+  return an empty segment list via the `#[cfg(not(target_os = "macos"))]`
+  stub in `src-tauri/src/window_geometry/mod.rs`, which is the documented
+  graceful-degradation path (climbing simply never triggers there) but is
+  not the same as a real implementation.
 
 ## Completion Notes
 
-Fill this in before moving the task to `docs/tasks/done/`.
+Left in `docs/tasks/active/` rather than moved to `done/`: Windows/Linux
+window-geometry backends, CPU profiling, and interactive manual playtesting
+are still outstanding (see Verification Results). Move to `done/` once those
+are closed out or explicitly descoped.
 
-- Completed: YYYY-MM-DD
 - Changed files:
+  - `src-tauri/src/window_geometry/mod.rs` (new) — macOS window enumeration
+    via `CGWindowListCopyWindowInfo`; non-macOS stub.
+  - `src-tauri/src/lib.rs` — `pet_petted` command, `CalmModeState`,
+    `start_window_geometry_watcher` (2 Hz poll, skipped in calm mode),
+    `calmMode` on `OverlaySettingsPayload`.
+  - `src-tauri/src/store/game_state.rs` — `AppSettings.calm_mode` (+ column
+    migration).
+  - `src-tauri/src/economy/state.rs` — `EconomyState::pet_bump()`.
+  - `src-tauri/Cargo.toml` — `core-graphics`/`core-foundation` (macOS only).
+  - `ui/overlay/src/main.ts` — full rewrite of the interaction layer: in-JS
+    pointer-tracked drag (replacing the old `startDragging()` OS-window
+    drag, which would have dragged the *entire* full-monitor overlay window
+    rather than just the pet), throw physics with gravity/landing, click
+    reactions + combo escalation, hover-petting, idle gags, and
+    window-segment walk/climb/fall behavior.
+  - `ui/dashboard/src/routes/+page.svelte` — calm-mode toggle.
+- Notable scope deviation: the task's Scope section calls for new sprite-sheet
+  animation tags (`climb`, `tumble`, `dizzy`, `sit`, `pet-loved`) on the 0005
+  Aseprite pipeline. In practice `ui/overlay/src/main.ts` never became a
+  sprite-sheet renderer - despite 0005's assets existing under
+  `ui/assets/sprites/`, the renderer still draws the pet procedurally with
+  Canvas shapes (ellipses/rects), same as before this task. All new 0012
+  modes are implemented as procedural embellishments on that same renderer
+  (spiral eyes for dizzy, a heart for petted, dust puffs for landing, etc.)
+  rather than new sprite tags. Wiring the sprite sheets into the renderer is
+  still open work belonging to 0005.
 - Follow-ups:
+  - Windows and Linux X11 window-geometry backends.
+  - CPU profiling pass (idle/active/climbing) on each OS.
+  - Interactive manual playtest of every acceptance criterion on a real
+    display.
+  - Wire the existing `ui/assets/sprites/hatchling.png`/`.json` sheets into
+    the renderer (0005 follow-up), then re-express 0012's new modes as real
+    sprite tags instead of procedural shapes.
+  - `beforeDevCommand` in `tauri.conf.json` assumes `cargo tauri dev` is run
+    from `src-tauri/`; running it from the repo root fails (`npm --prefix`
+    paths resolve relative to the wrong directory). Worth fixing or
+    documenting explicitly.

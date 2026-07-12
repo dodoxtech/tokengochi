@@ -436,6 +436,12 @@ impl EconomyState {
         true
     }
 
+    /// Small, rate-limited fullness bump from petting (task 0012). Callers
+    /// enforce the rate limit; this just applies the fixed nudge.
+    pub fn pet_bump(&mut self) {
+        self.fullness = (self.fullness + 2.0).min(100.0);
+    }
+
     /// Call on app launch (and periodically while running) with the current
     /// wall-clock unix time and local calendar date. Applies fullness decay
     /// proportional to real elapsed seconds and rolls day boundaries

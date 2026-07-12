@@ -31,3 +31,7 @@ tauri-plugin-autostart = "2.5.1"
 tauri-plugin-single-instance = "2.4.2"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-graphics = "0.25"
