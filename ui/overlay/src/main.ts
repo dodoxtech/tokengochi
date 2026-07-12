@@ -82,6 +82,7 @@ let dpr = window.devicePixelRatio || 1;
 let lastTick = performance.now();
 let lastHit = false;
 let hover = false;
+let eatRequestInFlight = false;
 
 function resizeCanvas(): void {
   dpr = window.devicePixelRatio || 1;
@@ -175,15 +176,28 @@ function updatePet(dtMs: number, now: number): void {
   }
 
   if (now - pet.eatStartedAt >= EAT_MS) {
-    target.eaten = true;
+    // A frame runs every ~33 ms, while the Tauri command is asynchronous.
+    // Keep this Food claimed until the command settles so a slow IPC response
+    // cannot consume several queued Food items from repeated frames.
+    if (eatRequestInFlight) {
+      return;
+    }
+    eatRequestInFlight = true;
     void invoke<PetStatePayload>("pet_ate")
       .then((nextState) => {
+        target.eaten = true;
         state = nextState;
         pet.happyUntil = performance.now() + 900;
         ensurePendingFoodVisible();
       })
       .catch(() => {
-        target.eaten = true;
+        // Leave the Food visible so a transient IPC failure can be retried
+        // instead of losing a pending reward from the presentation queue.
+        pet.mode = "idle";
+        pet.eatStartedAt = 0;
+      })
+      .finally(() => {
+        eatRequestInFlight = false;
       });
   }
 }

@@ -128,4 +128,29 @@ mod tests {
 
         assert_eq!(store.load_economy_state().unwrap(), Some(state));
     }
+
+    #[test]
+    fn pending_food_survives_reopening_the_database() {
+        let path = std::env::temp_dir().join(format!(
+            "tokengochi-game-state-{}-{}.sqlite3",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut state = EconomyState::new(NaiveDate::from_ymd_opt(2026, 7, 12).unwrap(), 100);
+        state.food_inventory = 2;
+
+        {
+            let store = GameStateStore::open(&path).unwrap();
+            store.save_economy_state(&state, 200).unwrap();
+        }
+
+        let reopened = GameStateStore::open(&path).unwrap();
+        assert_eq!(reopened.load_economy_state().unwrap(), Some(state));
+
+        drop(reopened);
+        std::fs::remove_file(path).unwrap();
+    }
 }
