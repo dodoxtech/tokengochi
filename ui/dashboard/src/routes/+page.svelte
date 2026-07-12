@@ -2,6 +2,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
+  import { check } from "@tauri-apps/plugin-updater";
+  import { relaunch } from "@tauri-apps/plugin-process";
 
   type PetState = {
     fullness: number;
@@ -40,11 +42,15 @@
     { id: "bubble", label: "Bubble", tone: "#73eff7" },
   ];
 
+  type UpdateStatus = "idle" | "checking" | "up-to-date" | "downloading" | "ready" | "error";
+
   let dashboard = $state<DashboardState | null>(null);
   let autostart = $state(false);
   let selectedEgg = $state("sprout");
   let busy = $state(false);
   let error = $state("");
+  let updateStatus = $state<UpdateStatus>("idle");
+  let updateVersion = $state("");
 
   function formatNumber(value: number): string {
     return Math.round(value).toLocaleString();
@@ -102,6 +108,29 @@
     } catch (cause) {
       error = String(cause);
     }
+  }
+
+  async function checkForUpdates() {
+    try {
+      updateStatus = "checking";
+      error = "";
+      const update = await check();
+      if (!update) {
+        updateStatus = "up-to-date";
+        return;
+      }
+      updateVersion = update.version;
+      updateStatus = "downloading";
+      await update.downloadAndInstall();
+      updateStatus = "ready";
+    } catch (cause) {
+      updateStatus = "error";
+      error = String(cause);
+    }
+  }
+
+  async function installAndRestart() {
+    await relaunch();
   }
 
   onMount(() => {
@@ -268,6 +297,36 @@
             {/each}
           </select>
         </label>
+
+        <div class="field update-row">
+          <span>Updates</span>
+          <span class="update-status">
+            {#if updateStatus === "idle"}
+              Not checked yet
+            {:else if updateStatus === "checking"}
+              Checking…
+            {:else if updateStatus === "up-to-date"}
+              You're on the latest version
+            {:else if updateStatus === "downloading"}
+              Downloading v{updateVersion}…
+            {:else if updateStatus === "ready"}
+              v{updateVersion} ready — restart to apply
+            {:else if updateStatus === "error"}
+              Update check failed
+            {/if}
+          </span>
+          {#if updateStatus === "ready"}
+            <button class="primary" onclick={installAndRestart}>Restart now</button>
+          {:else}
+            <button
+              class="ghost"
+              onclick={checkForUpdates}
+              disabled={updateStatus === "checking" || updateStatus === "downloading"}
+            >
+              Check for updates
+            </button>
+          {/if}
+        </div>
       </section>
     {/if}
   {/if}
@@ -455,6 +514,13 @@
   }
   .field {
     grid-template-columns: 120px 1fr auto;
+  }
+  .update-row {
+    grid-template-columns: 120px 1fr auto;
+  }
+  .update-status {
+    color: #aebbd1;
+    font-size: 14px;
   }
   input,
   select {
