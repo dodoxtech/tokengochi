@@ -1,6 +1,6 @@
 ---
 type: task
-status: active
+status: done
 priority: P0
 delivery_order: 0004
 estimate: 3d
@@ -10,7 +10,7 @@ owner: AI agent
 sprint: null
 tags:
   - task
-  - active
+  - done
 ---
 
 # Task: Economy engine core (token → food conversion, caps, XP, fullness)
@@ -76,4 +76,12 @@ This was a **real bug in `apply_token_event`**, not a bad test, and my own Pytho
 **Still needed:** please re-run `cargo test --manifest-path src-tauri/Cargo.toml` to confirm the fix actually gets all 32 tests green (I can reason about the logic but can't execute it here). The "simulated 30-day usage script" from the original Verification Plan was still not built as a separate script - the unit tests cover the individual mechanics but not an end-to-end multi-day scenario; marking the Plan checkbox based on the unit-test suite existing and (pending re-run) passing, not on that script existing.
 - **Not verified - the "simulated 30-day usage script" in the Verification Plan was not built.** The unit tests cover the individual mechanics (weighting, cap escalation, Pantry, decay, DST-immunity, ledger idempotency) but not an end-to-end multi-day simulation script. Flagging as a real gap rather than quietly skipping it - happy to build one if useful, but wanted to be upfront that "unit tests only" is narrower than the plan called for.
 
-**Conclusion:** code + tests are complete for the in-scope mechanics; staying in `docs/tasks/active/` until `cargo test` has actually run once.
+**Round 3 (2026-07-12, scope extension + real `cargo test` run):** three mechanics added on user request, all config-driven via `economy.toml`:
+
+1. **Per-model token tiers** (`[model_weights]`: opus ×2.0 / sonnet ×1.0 / haiku ×0.4, `model_weight_default` = 1.0): new `model` field on `TokenEvent` (parsed defensively from `message.model` in the Claude Code JSONL; empty string when absent), new `model` column in the ledger, and `conversion::model_multiplier()` (case-insensitive substring match, sorted key order, first match wins) scaling `weighted_tokens()`.
+2. **Starving/hibernation state** (`Mood::Starving`, fullness <5): XP ×0 — including the meal that wakes the pet, since mood is evaluated pre-meal — but still no death/level loss, per the guilt-free design in [[../../knowledge/game-economy|Game Economy]] §3. Hungry band is now 5–14.
+3. **Explicit daily food need** (`daily_food_need` = 1.5 replaces `fullness_decay_per_24h`): decay is derived as `daily_food_need × fullness_per_food` = 30/24h via `EconomyConfig::fullness_decay_per_24h()`, so "how much must the pet eat per day" is the tuned constant.
+
+`cargo test`: **38 passed, 0 failed** — this run also confirms Round 2's `apply_token_event` reordering fix (the previously-failing hard-cap/Pantry test now passes for real). New tests: model tier matching/fallback/scaling (`conversion.rs`), Starving band + ×0 multiplier (`fullness.rs`), decay-from-need and starving-hibernation-then-recovery (`state.rs`), and a guard that the bundled `economy.toml` parses into `EconomyConfig` (`config.rs`, would have caught the field rename drifting from the shipped file).
+
+**Conclusion:** complete and verified. Follow-ups: the 30-day simulation script (still unbuilt, flagged above) and wiring into `run()` remain task 0006+ territory; manual-mode ×0.25 rate (§7) is still not applied anywhere.

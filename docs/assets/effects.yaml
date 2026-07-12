@@ -1,0 +1,45 @@
+id: effects
+type: sprite
+subject: hatchling overlay effects
+description: >
+  Pixel-art sleep bubbles, a happy heart, click exclamation, and landing dust
+  puffs rendered as small transparent overlay frames.
+keywords: [effects, zzz, heart, exclaim, dust, sprite, overlay]
+placement:
+  intended_use: feedback overlays above or around the pet
+  context: Canvas 2D overlay at 4x nearest-neighbor scale
+  do: [anchor relative to hatchling, preserve native pixels]
+  dont: [do not smooth or place as a full-screen effect]
+style:
+  art_style: Sweetie 16 pixel art
+  outline: "1px #1a1c2c"
+  shading: flat two-tone, top-left light
+palette: ["#1a1c2c", "#ef7d57", "#ffcd75", "#a7f070", "#38b764", "#f4f4f4", "#94b0c2"]
+background: chroma-keyed to transparent
+dimensions:
+  master: 1254x1254
+  aspect: "8:2 packed output"
+accessibility:
+  alt_text: "Pixel-art sleep, happy, surprise, and dust effects"
+animation:
+  sheet: ui/assets/sprites/effects/effects.png
+  cell: { w: 16, h: 16 }
+  columns: 8
+  count: 10
+  fps: 12
+  loop: false
+  anchor: [0.5, 1.0]
+  clips: { zzz: [0, 2], heart: [3, 4], exclaim: [5, 5], dust: [6, 9] }
+files:
+  - path: ui/assets/sprites/effects/effects.png
+    size: 128x32
+    format: png
+    bytes: 581
+  - path: ui/assets/sprites/effects/effects.json
+    format: json-array
+    bytes: 2355
+source:
+  model: gpt-image
+  prompt: "Sweetie 16 pixel overlay effects sprite-sheet master, chroma-magenta plate"
+  generated: 2026-07-12
+  master: ui/assets/sprites/source/effects-master.png

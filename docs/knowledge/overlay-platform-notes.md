@@ -35,6 +35,8 @@ Findings from task [[../tasks/active/0002-pet-overlay-window-spike|0002 - pet ov
 
 Maps to `NSWindow` borderless + `setIgnoresMouseEvents:` + window level for always-on-top + `collectionBehavior`/`NSWindow.isExcludedFromWindowsMenu`-style flags for skip-taskbar. This is the same mechanism classic macOS desktop pets use; expected to work. Watch for: Retina (HiDPI) coordinate handling, and Spaces/Mission Control interaction with always-on-top windows (may need `canJoinAllSpaces` behavior later).
 
+**Confirmed bug (round 2, real hardware):** `"transparent": true` on the window alone was not enough on macOS - the overlay rendered with an opaque white background instead of a transparent one. Root cause: Tauri v2's WKWebView-backed window needs `app.macOSPrivateApi: true` set in `tauri.conf.json` for window transparency to actually take effect; without it, the WKWebView ignores the transparent window flag and paints its default opaque background regardless of the `background: transparent` already set in `ui/overlay/index.html`. Fixed by adding `"macOSPrivateApi": true` under `"app"` in `src-tauri/tauri.conf.json`. Still needs a re-run on macOS to confirm the fix actually clears the white background.
+
 ### Linux X11
 
 Override-redirect/always-on-top/transparent windows work via webkit2gtk + GTK, given a compositing window manager (most modern DEs ship one). Click-through maps to an input-shape region. Watch for: transparency renders as opaque/black on a non-compositing WM - worth a startup check + a documented "enable compositing" note for users on minimal X11 setups.

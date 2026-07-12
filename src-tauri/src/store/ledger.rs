@@ -37,6 +37,7 @@ impl Ledger {
             "CREATE TABLE IF NOT EXISTS token_events (
                 message_id        TEXT PRIMARY KEY,
                 provider          TEXT NOT NULL,
+                model             TEXT NOT NULL DEFAULT '',
                 input_tokens      INTEGER NOT NULL,
                 output_tokens     INTEGER NOT NULL,
                 cache_read_tokens INTEGER NOT NULL,
@@ -56,11 +57,12 @@ impl Ledger {
     pub fn record_event(&self, event: &TokenEvent) -> rusqlite::Result<bool> {
         let rows_changed = self.conn.execute(
             "INSERT OR IGNORE INTO token_events
-                (message_id, provider, input_tokens, output_tokens, cache_read_tokens, timestamp)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                (message_id, provider, model, input_tokens, output_tokens, cache_read_tokens, timestamp)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 event.message_id,
                 event.provider,
+                event.model,
                 event.input_tokens as i64,
                 event.output_tokens as i64,
                 event.cache_read_tokens as i64,
@@ -85,6 +87,7 @@ mod tests {
         TokenEvent {
             provider: "claude_code".to_string(),
             message_id: id.to_string(),
+            model: "claude-sonnet-5".to_string(),
             input_tokens: 100,
             output_tokens: 50,
             cache_read_tokens: 0,
@@ -126,9 +129,7 @@ mod tests {
         // a crash - the whole batch replayed twice should still only count
         // once each.
         let ledger = Ledger::in_memory().unwrap();
-        let batch: Vec<TokenEvent> = (0..5)
-            .map(|i| sample_event(&format!("msg_{i}")))
-            .collect();
+        let batch: Vec<TokenEvent> = (0..5).map(|i| sample_event(&format!("msg_{i}"))).collect();
 
         for event in &batch {
             ledger.record_event(event).unwrap();

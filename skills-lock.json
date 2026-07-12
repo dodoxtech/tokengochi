@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "asset-canon": {
+      "source": "dodoxtech/asset-canon",
+      "sourceType": "github",
+      "skillPath": "skills/asset-canon/SKILL.md",
+      "computedHash": "7ad63392937ddd250830768408caa104a37a28a37b26ecbf227eb1dcdd4d08db"
+    }
+  }
+}

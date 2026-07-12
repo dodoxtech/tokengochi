@@ -37,7 +37,10 @@ impl ClaudeCodeProvider {
             .unwrap_or_else(|| PathBuf::from(".claude/projects"));
 
         let state_path = dirs::data_dir()
-            .map(|dir| dir.join("tokengochi").join("claude_code_watcher_state.json"))
+            .map(|dir| {
+                dir.join("tokengochi")
+                    .join("claude_code_watcher_state.json")
+            })
             .unwrap_or_else(|| PathBuf::from("claude_code_watcher_state.json"));
 
         Self::with_paths(root, state_path)
@@ -72,7 +75,10 @@ impl TokenProvider for ClaudeCodeProvider {
         if !root.is_dir() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("claude code project directory not found: {}", root.display()),
+                format!(
+                    "claude code project directory not found: {}",
+                    root.display()
+                ),
             ));
         }
 
@@ -160,6 +166,8 @@ pub(crate) fn split_complete_lines(buf: &[u8]) -> (Vec<String>, usize) {
 #[derive(Debug, PartialEq)]
 pub(crate) struct ParsedUsage {
     pub message_id: Option<String>,
+    /// Model id from the line's `message.model`, if present.
+    pub model: Option<String>,
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_read_tokens: u64,
@@ -182,6 +190,8 @@ struct RawLine {
 struct RawMessage {
     #[serde(default)]
     id: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
     #[serde(default)]
     usage: Option<RawUsage>,
 }
@@ -230,6 +240,7 @@ pub(crate) fn parse_usage_line(line: &str) -> Option<ParsedUsage> {
 
     Some(ParsedUsage {
         message_id: message.id,
+        model: message.model,
         input_tokens,
         output_tokens: usage.output_tokens,
         cache_read_tokens: usage.cache_read_input_tokens,
@@ -326,6 +337,7 @@ fn process_lines(
         events.push(TokenEvent {
             provider: "claude_code".to_string(),
             message_id,
+            model: parsed.model.unwrap_or_default(),
             input_tokens: parsed.input_tokens,
             output_tokens: parsed.output_tokens,
             cache_read_tokens: parsed.cache_read_tokens,
@@ -368,7 +380,10 @@ fn tail_file(file: &Path, state: &mut WatcherState, tx: &Sender<TokenEvent>) {
     let (lines, new_offset) = match read_new_lines(file, offset_before) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("claude_code watcher: failed to read {}: {e}", file.display());
+            eprintln!(
+                "claude_code watcher: failed to read {}: {e}",
+                file.display()
+            );
             return;
         }
     };
@@ -413,7 +428,10 @@ fn run_watch_loop(root: PathBuf, state_path: PathBuf, tx: Sender<TokenEvent>) {
     };
 
     if let Err(e) = watcher.watch(&root, RecursiveMode::Recursive) {
-        eprintln!("claude_code watcher: failed to watch {}: {e}", root.display());
+        eprintln!(
+            "claude_code watcher: failed to watch {}: {e}",
+            root.display()
+        );
         return;
     }
 
@@ -453,6 +471,7 @@ mod tests {
         let line = VALID_SESSION.lines().nth(1).unwrap(); // first assistant line
         let parsed = parse_usage_line(line).expect("should parse");
         assert_eq!(parsed.message_id.as_deref(), Some("msg_001"));
+        assert_eq!(parsed.model.as_deref(), Some("claude-opus-4-8"));
         assert_eq!(parsed.input_tokens, 120); // 100 input + 20 cache_creation
         assert_eq!(parsed.output_tokens, 45);
         assert_eq!(parsed.cache_read_tokens, 5);
@@ -485,6 +504,9 @@ mod tests {
         // cache_read_input_tokens is absent from the fixture -> defaults to 0.
         assert_eq!(parsed.cache_read_tokens, 0);
         assert_eq!(parsed.input_tokens, 50);
+        // `model` is absent too -> None, which becomes "" in the TokenEvent
+        // and falls back to `model_weight_default` in the economy engine.
+        assert_eq!(parsed.model, None);
     }
 
     #[test]
@@ -551,7 +573,10 @@ mod tests {
 
         // Now append a genuinely new line and confirm it - and only it -
         // gets picked up.
-        let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&file)
+            .unwrap();
         use std::io::Write;
         writeln!(
             f,

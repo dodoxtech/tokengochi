@@ -151,9 +151,14 @@ impl EconomyState {
     /// proportional to real elapsed seconds and rolls day boundaries
     /// (Pantry auto-feed) for any days that passed while the app was
     /// closed.
-    pub fn reconcile_elapsed_time(&mut self, now_unix: i64, today: NaiveDate, config: &EconomyConfig) {
+    pub fn reconcile_elapsed_time(
+        &mut self,
+        now_unix: i64,
+        today: NaiveDate,
+        config: &EconomyConfig,
+    ) {
         let elapsed_secs = (now_unix - self.last_reconciled_unix).max(0) as f64;
-        let decay = elapsed_secs / 86_400.0 * config.fullness_decay_per_24h as f64;
+        let decay = elapsed_secs / 86_400.0 * config.fullness_decay_per_24h();
         self.fullness = (self.fullness - decay).max(0.0);
         self.last_reconciled_unix = now_unix;
 
@@ -209,12 +214,20 @@ mod tests {
             weight_output: 1.0,
             weight_input: 0.25,
             weight_cache_read: 0.05,
+            model_weights: [
+                ("opus".to_string(), 2.0),
+                ("sonnet".to_string(), 1.0),
+                ("haiku".to_string(), 0.4),
+            ]
+            .into_iter()
+            .collect(),
+            model_weight_default: 1.0,
             daily_soft_cap: 10,
             soft_cap_escalation: 1.5,
             daily_hard_cap: 20,
             pantry_max: 5,
             fullness_per_food: 20,
-            fullness_decay_per_24h: 25,
+            daily_food_need: 1.5,
             xp_per_food: 10,
             xp_curve_base: 50.0,
             xp_curve_exponent: 1.6,
@@ -234,6 +247,9 @@ mod tests {
         TokenEvent {
             provider: "claude_code".to_string(),
             message_id: id.to_string(),
+            // Sonnet tier = x1.0 model multiplier, so the arithmetic in the
+            // comments above stays as written.
+            model: "claude-sonnet-5".to_string(),
             input_tokens: 0,
             output_tokens: 30_000_000,
             cache_read_tokens: 0,
@@ -245,6 +261,7 @@ mod tests {
         TokenEvent {
             provider: "claude_code".to_string(),
             message_id: id.to_string(),
+            model: "claude-sonnet-5".to_string(),
             input_tokens: 0,
             output_tokens: weighted_output_tokens,
             cache_read_tokens: 0,
@@ -313,7 +330,10 @@ mod tests {
             config.pantry_max - 1,
             "exactly one auto-feed for day 2 (day 1 had usage, so it doesn't auto-feed)"
         );
-        assert!(state.xp > xp_before, "auto-feed should grant XP same as any other meal");
+        assert!(
+            state.xp > xp_before,
+            "auto-feed should grant XP same as any other meal"
+        );
     }
 
     #[test]
@@ -336,7 +356,10 @@ mod tests {
 
         // 2 days closed, no pantry stock -> pure decay, no auto-feed noise.
         state.reconcile_elapsed_time(2 * 86_400, day(2026, 1, 3), &config);
-        assert_eq!(state.fullness, 100.0 - 2.0 * config.fullness_decay_per_24h as f64);
+        assert_eq!(
+            state.fullness,
+            100.0 - 2.0 * config.fullness_decay_per_24h()
+        );
 
         // A much longer gap floors at 0 rather than going negative.
         let mut long_gap_state = EconomyState::new(day(2026, 1, 1), 0);
@@ -378,6 +401,41 @@ mod tests {
     }
 
     #[test]
+    fn decay_rate_is_derived_from_daily_food_need() {
+        // daily_food_need = 1.5 and fullness_per_food = 20 -> the pet needs
+        // 30 fullness/day, i.e. exactly daily_food_need Food/day to hold
+        // steady - that's the "mỗi ngày cần ăn" contract.
+        let config = test_config();
+        assert_eq!(config.fullness_decay_per_24h(), 30.0);
+
+        let mut state = EconomyState::new(day(2026, 1, 1), 0);
+        state.reconcile_elapsed_time(86_400, day(2026, 1, 2), &config);
+        assert_eq!(state.fullness, 70.0);
+    }
+
+    #[test]
+    fn starving_pet_hibernates_gaining_zero_xp_until_fed_out_of_it() {
+        let config = test_config();
+        let mut state = EconomyState::new(day(2026, 1, 1), 0);
+        state.fullness = 0.0; // deep neglect: Starving band (<5)
+        state.food_inventory = 2;
+
+        // First meal: mood evaluated before eating -> Starving -> x0 XP.
+        // The meal still restores fullness (0 -> 20), waking the pet up.
+        assert!(state.eat_from_inventory(&config));
+        assert_eq!(
+            state.xp, 0.0,
+            "a hibernating pet gains no XP, even from the waking meal"
+        );
+        assert_eq!(state.fullness, 20.0);
+
+        // Second meal: now Peckish (15-39) -> x0.8, XP flows again. The
+        // pet never lost anything while starving - XP only ever goes up.
+        assert!(state.eat_from_inventory(&config));
+        assert_eq!(state.xp, config.xp_per_food as f64 * 0.8);
+    }
+
+    #[test]
     fn replaying_the_same_event_twice_at_the_state_layer_double_counts() {
         // EconomyState itself has no dedup - that's the ledger's job
         // (store::Ledger, keyed by message_id). This test documents that
@@ -387,6 +445,9 @@ mod tests {
         let mut state = EconomyState::new(day(2026, 1, 1), 0);
         state.apply_token_event(&small_event("m1", 20_000), &config);
         state.apply_token_event(&small_event("m1", 20_000), &config);
-        assert_eq!(state.food_inventory, 2, "EconomyState alone is not idempotent by design");
+        assert_eq!(
+            state.food_inventory, 2,
+            "EconomyState alone is not idempotent by design"
+        );
     }
 }

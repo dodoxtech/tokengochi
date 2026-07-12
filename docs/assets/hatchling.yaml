@@ -1,0 +1,46 @@
+id: hatchling
+type: sprite
+subject: left-facing chick-like hatchling pet
+description: >
+  A round yellow chick blob with an orange lower-right shadow, cream belly,
+  orange feet and cheeks, dark outline, and a green leaf tuft. The sheet
+  provides idle, walk, sleep, eat, happy, drag, and react poses.
+keywords: [pet, hatchling, chick, sprite, animation, overlay]
+placement:
+  intended_use: desktop pet overlay renderer
+  context: Canvas 2D sprite renderer at 4x nearest-neighbor scale
+  do: [anchor at bottom center, mirror with Canvas for rightward movement]
+  dont: [do not non-integer scale, do not smooth, do not add a baked ground shadow]
+style:
+  art_style: Sweetie 16 pixel art
+  outline: "1px #1a1c2c"
+  shading: flat two-tone, top-left light
+palette: ["#1a1c2c", "#ef7d57", "#ffcd75", "#a7f070", "#38b764", "#f4f4f4", "#94b0c2"]
+background: chroma-keyed to transparent
+dimensions:
+  master: 1586x992
+  aspect: "8:5 packed output"
+accessibility:
+  alt_text: "Animated yellow hatchling pixel-art pet"
+animation:
+  sheet: ui/assets/sprites/hatchling/hatchling.png
+  cell: { w: 32, h: 32 }
+  columns: 8
+  count: 31
+  fps: 10
+  loop: true
+  anchor: [0.5, 1.0]
+  clips: { idle: [0, 3], walk: [4, 9], sleep: [10, 13], eat: [14, 19], happy: [20, 25], drag: [26, 27], react: [28, 30] }
+files:
+  - path: ui/assets/sprites/hatchling/hatchling.png
+    size: 256x160
+    format: png
+    bytes: 3281
+  - path: ui/assets/sprites/hatchling/hatchling.json
+    format: json-array
+    bytes: 6318
+source:
+  model: gpt-image
+  prompt: "Hatchling animation sprite-sheet master, Sweetie 16, chroma-magenta plate"
+  generated: 2026-07-12
+  master: ui/assets/sprites/source/hatchling-master.png

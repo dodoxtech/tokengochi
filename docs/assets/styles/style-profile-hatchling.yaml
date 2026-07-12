@@ -1,0 +1,11 @@
+id: tokengochi-sweetie16-v1/hatchling
+palette: ["#1a1c2c", "#ef7d57", "#ffcd75", "#a7f070", "#38b764", "#f4f4f4", "#94b0c2"]
+line:
+  weight: "1px native pixel outline"
+  style: uniform
+shading: flat-two-tone
+lighting: top-left
+camera: side
+prompt_suffix: "cute left-facing round hatchling, Sweetie 16 pixel art, binary alpha, no anti-aliasing"
+negative: [gradients, partial-alpha, bevels, non-palette-colors]
+plate: "#FF00FF"

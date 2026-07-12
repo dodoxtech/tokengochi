@@ -20,6 +20,9 @@ impl ManualProvider {
         TokenEvent {
             provider: "manual".to_string(),
             message_id,
+            // No real model behind manual mode - empty string takes the
+            // economy engine's `model_weight_default` path.
+            model: String::new(),
             input_tokens: weighted_tokens,
             output_tokens: 0,
             cache_read_tokens: 0,

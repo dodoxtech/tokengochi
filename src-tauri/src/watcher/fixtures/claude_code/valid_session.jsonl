@@ -1,2 +1,2 @@
 {"type":"user","message":{"id":"msg_000","content":"hello, can you help me refactor this function?"},"timestamp":"2026-07-11T23:59:00Z"}
-{"type":"assistant","message":{"id":"msg_001","content":"Sure, here's a refactored version...","usage":{"input_tokens":100,"output_tokens":45,"cache_read_input_tokens":5,"cache_creation_input_tokens":20}},"timestamp":"2026-07-12T00:00:00Z"}
+{"type":"assistant","message":{"id":"msg_001","model":"claude-opus-4-8","content":"Sure, here's a refactored version...","usage":{"input_tokens":100,"output_tokens":45,"cache_read_input_tokens":5,"cache_creation_input_tokens":20}},"timestamp":"2026-07-12T00:00:00Z"}

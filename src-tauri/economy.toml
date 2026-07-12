@@ -10,6 +10,10 @@ weight_output = 1.0
 weight_input = 0.25
 weight_cache_read = 0.05
 
+# Multiplier for models matching no [model_weights] key below (and for
+# events with no model recorded, e.g. manual mode).
+model_weight_default = 1.0
+
 # Daily soft cap: first N Food/day at full rate, then each subsequent Food
 # costs `soft_cap_escalation` times more tokens (10 -> 15 -> 22.5 ...).
 daily_soft_cap = 10
@@ -21,12 +25,28 @@ daily_hard_cap = 20
 # Max Food banked in the Pantry, auto-fed on zero-usage days.
 pantry_max = 5
 
-# Fullness gained per Food eaten, and lost per 24h of real time.
+# Fullness gained per Food eaten.
 fullness_per_food = 20
-fullness_decay_per_24h = 25
+
+# Food/day the pet needs to hold fullness steady. Decay is derived from it:
+# daily_food_need * fullness_per_food fullness lost per 24h (1.5 * 20 = 30).
+# From full (100), an unfed pet reaches Hungry (<15) in ~3 days and
+# Starving (<5) shortly after - see docs/knowledge/game-economy.md §3.
+daily_food_need = 1.5
 
 # XP(n) = xp_curve_base * n ^ xp_curve_exponent. xp_per_food is the base
 # amount before the mood multiplier is applied.
 xp_per_food = 10
 xp_curve_base = 50.0
 xp_curve_exponent = 1.6
+
+# Per-model-tier token value multipliers. Keys are case-insensitive
+# *substrings* matched against the model id (e.g. "opus" matches
+# "claude-opus-4-8"); checked in sorted key order, first match wins.
+# Bigger models burn pricier tokens, so their tokens feed the pet more.
+# NOTE: TOML tables must come last in this file - any bare `key = value`
+# added below this line would be parsed as part of [model_weights].
+[model_weights]
+opus = 2.0
+sonnet = 1.0
+haiku = 0.4

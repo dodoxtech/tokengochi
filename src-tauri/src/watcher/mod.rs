@@ -31,6 +31,11 @@ pub struct TokenEvent {
     /// see `docs/knowledge/token-tracking.md` Open Questions (schema is
     /// undocumented/unverified against a live install).
     pub message_id: String,
+    /// Provider-native model id (e.g. `"claude-opus-4-8"`), used for
+    /// per-model token weighting (`docs/knowledge/game-economy.md` §2).
+    /// Empty string when the source line has no model field - the economy
+    /// engine falls back to `model_weight_default` for it.
+    pub model: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_read_tokens: u64,

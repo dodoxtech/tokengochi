@@ -1,0 +1,369 @@
+{
+  "frames": [
+    {
+      "filename": "hatchling 0.aseprite",
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 150
+    },
+    {
+      "filename": "hatchling 1.aseprite",
+      "frame": {
+        "x": 32,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 150
+    },
+    {
+      "filename": "hatchling 2.aseprite",
+      "frame": {
+        "x": 64,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 150
+    },
+    {
+      "filename": "hatchling 3.aseprite",
+      "frame": {
+        "x": 96,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 150
+    },
+    {
+      "filename": "hatchling 4.aseprite",
+      "frame": {
+        "x": 128,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 5.aseprite",
+      "frame": {
+        "x": 160,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 6.aseprite",
+      "frame": {
+        "x": 192,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 7.aseprite",
+      "frame": {
+        "x": 224,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 8.aseprite",
+      "frame": {
+        "x": 0,
+        "y": 32,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 9.aseprite",
+      "frame": {
+        "x": 32,
+        "y": 32,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 10.aseprite",
+      "frame": {
+        "x": 64,
+        "y": 32,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 250
+    },
+    {
+      "filename": "hatchling 11.aseprite",
+      "frame": {
+        "x": 96,
+        "y": 32,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 250
+    },
+    {
+      "filename": "hatchling 12.aseprite",
+      "frame": {
+        "x": 128,
+        "y": 32,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 250
+    },
+    {
+      "filename": "hatchling 13.aseprite",
+      "frame": {
+        "x": 160,
+        "y": 32,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 250
+    },
+    {
+      "filename": "hatchling 14.aseprite",
+      "frame": {
+        "x": 192,
+        "y": 32,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 15.aseprite",
+      "frame": {
+        "x": 224,
+        "y": 32,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 16.aseprite",
+      "frame": {
+        "x": 0,
+        "y": 64,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 17.aseprite",
+      "frame": {
+        "x": 32,
+        "y": 64,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 18.aseprite",
+      "frame": {
+        "x": 64,
+        "y": 64,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 19.aseprite",
+      "frame": {
+        "x": 96,
+        "y": 64,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 20.aseprite",
+      "frame": {
+        "x": 128,
+        "y": 64,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 21.aseprite",
+      "frame": {
+        "x": 160,
+        "y": 64,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 22.aseprite",
+      "frame": {
+        "x": 192,
+        "y": 64,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 23.aseprite",
+      "frame": {
+        "x": 224,
+        "y": 64,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 24.aseprite",
+      "frame": {
+        "x": 0,
+        "y": 96,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 25.aseprite",
+      "frame": {
+        "x": 32,
+        "y": 96,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 26.aseprite",
+      "frame": {
+        "x": 64,
+        "y": 96,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 150
+    },
+    {
+      "filename": "hatchling 27.aseprite",
+      "frame": {
+        "x": 96,
+        "y": 96,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 150
+    },
+    {
+      "filename": "hatchling 28.aseprite",
+      "frame": {
+        "x": 128,
+        "y": 96,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 29.aseprite",
+      "frame": {
+        "x": 160,
+        "y": 96,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    },
+    {
+      "filename": "hatchling 30.aseprite",
+      "frame": {
+        "x": 192,
+        "y": 96,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 100
+    }
+  ],
+  "meta": {
+    "app": "Tokengochi image-model pipeline",
+    "version": "1.0",
+    "image": "hatchling.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 256,
+      "h": 160
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "idle",
+        "from": 0,
+        "to": 3,
+        "direction": "forward"
+      },
+      {
+        "name": "walk",
+        "from": 4,
+        "to": 9,
+        "direction": "forward"
+      },
+      {
+        "name": "sleep",
+        "from": 10,
+        "to": 13,
+        "direction": "forward"
+      },
+      {
+        "name": "eat",
+        "from": 14,
+        "to": 19,
+        "direction": "forward"
+      },
+      {
+        "name": "happy",
+        "from": 20,
+        "to": 25,
+        "direction": "forward"
+      },
+      {
+        "name": "drag",
+        "from": 26,
+        "to": 27,
+        "direction": "forward"
+      },
+      {
+        "name": "react",
+        "from": 28,
+        "to": 30,
+        "direction": "forward"
+      }
+    ]
+  }
+}

@@ -27,4 +27,8 @@ pub enum Mood {
     Content,
     Peckish,
     Hungry,
+    /// Fullness has (nearly) bottomed out: the pet hibernates - sleeps, sad
+    /// animation, gains zero XP - but never dies and never loses levels
+    /// (guilt-free by design, see `docs/knowledge/game-economy.md` §3).
+    Starving,
 }

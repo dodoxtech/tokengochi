@@ -1,0 +1,141 @@
+{
+  "frames": [
+    {
+      "filename": "effects 0.aseprite",
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "duration": 300
+    },
+    {
+      "filename": "effects 1.aseprite",
+      "frame": {
+        "x": 16,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "duration": 300
+    },
+    {
+      "filename": "effects 2.aseprite",
+      "frame": {
+        "x": 32,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "duration": 300
+    },
+    {
+      "filename": "effects 3.aseprite",
+      "frame": {
+        "x": 48,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "duration": 200
+    },
+    {
+      "filename": "effects 4.aseprite",
+      "frame": {
+        "x": 64,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "duration": 200
+    },
+    {
+      "filename": "effects 5.aseprite",
+      "frame": {
+        "x": 80,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "duration": 400
+    },
+    {
+      "filename": "effects 6.aseprite",
+      "frame": {
+        "x": 96,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "duration": 80
+    },
+    {
+      "filename": "effects 7.aseprite",
+      "frame": {
+        "x": 112,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "duration": 80
+    },
+    {
+      "filename": "effects 8.aseprite",
+      "frame": {
+        "x": 0,
+        "y": 16,
+        "w": 16,
+        "h": 16
+      },
+      "duration": 80
+    },
+    {
+      "filename": "effects 9.aseprite",
+      "frame": {
+        "x": 16,
+        "y": 16,
+        "w": 16,
+        "h": 16
+      },
+      "duration": 80
+    }
+  ],
+  "meta": {
+    "app": "Tokengochi image-model pipeline",
+    "version": "1.0",
+    "image": "effects.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 128,
+      "h": 32
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "zzz",
+        "from": 0,
+        "to": 2,
+        "direction": "forward"
+      },
+      {
+        "name": "heart",
+        "from": 3,
+        "to": 4,
+        "direction": "forward"
+      },
+      {
+        "name": "exclaim",
+        "from": 5,
+        "to": 5,
+        "direction": "forward"
+      },
+      {
+        "name": "dust",
+        "from": 6,
+        "to": 9,
+        "direction": "forward"
+      }
+    ]
+  }
+}
