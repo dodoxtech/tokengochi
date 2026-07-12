@@ -10,5 +10,5 @@
 mod game_state;
 mod ledger;
 
-pub use game_state::GameStateStore;
-pub use ledger::Ledger;
+pub use game_state::{AppSettings, FoodStats, GameStateStore};
+pub use ledger::{Ledger, TokenTotals};

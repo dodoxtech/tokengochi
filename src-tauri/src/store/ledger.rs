@@ -12,6 +12,15 @@ use crate::watcher::TokenEvent;
 use rusqlite::{params, Connection};
 use std::path::Path;
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenTotals {
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub total: u64,
+}
+
 pub struct Ledger {
     conn: Connection,
 }
@@ -77,6 +86,33 @@ impl Ledger {
         self.conn
             .query_row("SELECT COUNT(*) FROM token_events", [], |row| row.get(0))
     }
+
+    pub fn token_totals_between(
+        &self,
+        start_unix: i64,
+        end_unix: i64,
+    ) -> rusqlite::Result<TokenTotals> {
+        self.conn.query_row(
+            "SELECT
+                COALESCE(SUM(input_tokens), 0),
+                COALESCE(SUM(output_tokens), 0),
+                COALESCE(SUM(cache_read_tokens), 0)
+             FROM token_events
+             WHERE timestamp >= ?1 AND timestamp < ?2",
+            params![start_unix, end_unix],
+            |row| {
+                let input = row.get::<_, i64>(0)? as u64;
+                let output = row.get::<_, i64>(1)? as u64;
+                let cache_read = row.get::<_, i64>(2)? as u64;
+                Ok(TokenTotals {
+                    input,
+                    output,
+                    cache_read,
+                    total: input + output + cache_read,
+                })
+            },
+        )
+    }
 }
 
 #[cfg(test)]
@@ -92,6 +128,13 @@ mod tests {
             output_tokens: 50,
             cache_read_tokens: 0,
             timestamp: 1_700_000_000,
+        }
+    }
+
+    fn sample_event_at(id: &str, timestamp: i64) -> TokenEvent {
+        TokenEvent {
+            timestamp,
+            ..sample_event(id)
         }
     }
 
@@ -139,5 +182,23 @@ mod tests {
         }
 
         assert_eq!(ledger.event_count().unwrap(), 5);
+    }
+
+    #[test]
+    fn sums_token_totals_for_time_window() {
+        let ledger = Ledger::in_memory().unwrap();
+        ledger.record_event(&sample_event_at("early", 9)).unwrap();
+        ledger.record_event(&sample_event_at("inside", 10)).unwrap();
+        ledger.record_event(&sample_event_at("late", 20)).unwrap();
+
+        assert_eq!(
+            ledger.token_totals_between(10, 20).unwrap(),
+            TokenTotals {
+                input: 100,
+                output: 50,
+                cache_read: 0,
+                total: 150,
+            }
+        );
     }
 }

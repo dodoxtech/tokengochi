@@ -22,23 +22,35 @@ use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 /// spike-stage overlay should degrade to "wrong size" rather than crash the
 /// whole app if monitor info is unavailable (e.g. headless CI, or Wayland
 /// without the right protocol support).
-pub fn fit_to_primary_monitor(app: &AppHandle) {
+pub fn fit_to_monitor(app: &AppHandle, monitor_index: u32, wayland_fallback: bool) {
     let Some(window) = app.get_webview_window("overlay") else {
         eprintln!("overlay_window: no window labeled \"overlay\" found");
         return;
     };
 
-    let monitor = match window.primary_monitor() {
-        Ok(Some(m)) => m,
-        Ok(None) => {
-            eprintln!("overlay_window: no primary monitor reported, keeping configured size");
-            return;
+    if wayland_fallback {
+        if let Err(e) = window.set_size(PhysicalSize::new(720, 480)) {
+            eprintln!("overlay_window: failed to set fallback size: {e}");
         }
+        if let Err(e) = window.set_position(PhysicalPosition::new(80, 80)) {
+            eprintln!("overlay_window: failed to set fallback position: {e}");
+        }
+        return;
+    }
+
+    let monitors = match window.available_monitors() {
+        Ok(monitors) => monitors,
         Err(e) => {
-            eprintln!("overlay_window: failed to query primary monitor: {e}");
+            eprintln!("overlay_window: failed to query monitors: {e}");
             return;
         }
     };
+    if monitors.is_empty() {
+        eprintln!("overlay_window: no monitors reported, keeping configured size");
+        return;
+    }
+    let index = (monitor_index as usize).min(monitors.len() - 1);
+    let monitor = &monitors[index];
 
     let size = monitor.size();
     let position = monitor.position();

@@ -5,11 +5,15 @@ mod store;
 mod tray;
 mod watcher;
 
-use chrono::Local;
+use chrono::{Datelike, Duration, Local, TimeZone};
 use economy::{level_for_xp, mood_from_fullness, EconomyConfig, EconomyState};
-use std::sync::{mpsc, Arc, Mutex};
-use store::{GameStateStore, Ledger};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc, Arc, Mutex,
+};
+use store::{AppSettings, FoodStats, GameStateStore, Ledger, TokenTotals};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_autostart::ManagerExt;
 use watcher::{ClaudeCodeProvider, TokenEvent, TokenProvider};
 
 /// Managed state holding the economy balance constants loaded from
@@ -23,9 +27,11 @@ struct GameRuntime {
     economy: EconomyState,
     ledger: Ledger,
     state_store: GameStateStore,
+    settings: AppSettings,
 }
 
 struct GameRuntimeState(Arc<Mutex<GameRuntime>>);
+struct TrackingState(Arc<AtomicBool>);
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +55,37 @@ struct FoodSpawnedPayload {
     pending_food: u32,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderStatusPayload {
+    claude_code_detected: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StatsPayload {
+    food: FoodStats,
+    today_tokens: TokenTotals,
+    week_tokens: TokenTotals,
+    streak_days: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OverlaySettingsPayload {
+    pet_size: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DashboardPayload {
+    pet: PetStatePayload,
+    settings: AppSettings,
+    providers: ProviderStatusPayload,
+    stats: StatsPayload,
+    monitor_count: u32,
+}
+
 /// Returns the currently loaded economy balance constants. See
 /// `docs/knowledge/game-economy.md` §8.
 #[tauri::command]
@@ -68,6 +105,110 @@ fn get_pet_state(state: tauri::State<GameRuntimeState>) -> Result<PetStatePayloa
         .map_err(|_| "game runtime mutex poisoned".to_string())?;
     reconcile_and_persist(&mut runtime).map_err(|err| err.to_string())?;
     Ok(pet_state_payload(&runtime))
+}
+
+#[tauri::command]
+fn get_dashboard_state(
+    app: AppHandle,
+    state: tauri::State<GameRuntimeState>,
+) -> Result<DashboardPayload, String> {
+    let mut runtime = state
+        .0
+        .lock()
+        .map_err(|_| "game runtime mutex poisoned".to_string())?;
+    reconcile_and_persist(&mut runtime).map_err(|err| err.to_string())?;
+    dashboard_payload(&app, &runtime)
+}
+
+#[tauri::command]
+fn update_settings(
+    app: AppHandle,
+    settings: AppSettings,
+    state: tauri::State<GameRuntimeState>,
+    tracking: tauri::State<TrackingState>,
+) -> Result<AppSettings, String> {
+    let settings = validate_settings(settings)?;
+    let mut runtime = state
+        .0
+        .lock()
+        .map_err(|_| "game runtime mutex poisoned".to_string())?;
+    runtime.settings = settings;
+    runtime
+        .state_store
+        .save_app_settings(&runtime.settings, Local::now().timestamp())
+        .map_err(|err| err.to_string())?;
+    tracking
+        .0
+        .store(runtime.settings.tracking_paused, Ordering::SeqCst);
+    apply_overlay_settings(&app, &runtime.settings);
+    let _ = app.emit("settings_changed", runtime.settings.clone());
+    Ok(runtime.settings.clone())
+}
+
+#[tauri::command]
+fn complete_onboarding(
+    app: AppHandle,
+    starter_egg: String,
+    state: tauri::State<GameRuntimeState>,
+    tracking: tauri::State<TrackingState>,
+) -> Result<AppSettings, String> {
+    let mut runtime = state
+        .0
+        .lock()
+        .map_err(|_| "game runtime mutex poisoned".to_string())?;
+    runtime.settings.starter_egg = normalize_starter_egg(&starter_egg);
+    runtime.settings.onboarding_complete = true;
+    runtime
+        .state_store
+        .save_app_settings(&runtime.settings, Local::now().timestamp())
+        .map_err(|err| err.to_string())?;
+    tracking
+        .0
+        .store(runtime.settings.tracking_paused, Ordering::SeqCst);
+    apply_overlay_settings(&app, &runtime.settings);
+    let _ = app.emit("settings_changed", runtime.settings.clone());
+    Ok(runtime.settings.clone())
+}
+
+#[tauri::command]
+fn set_tracking_paused(
+    paused: bool,
+    state: tauri::State<GameRuntimeState>,
+    tracking: tauri::State<TrackingState>,
+) -> Result<(), String> {
+    let mut runtime = state
+        .0
+        .lock()
+        .map_err(|_| "game runtime mutex poisoned".to_string())?;
+    runtime.settings.tracking_paused = paused;
+    runtime
+        .state_store
+        .save_app_settings(&runtime.settings, Local::now().timestamp())
+        .map_err(|err| err.to_string())?;
+    tracking.0.store(paused, Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+fn is_tracking_paused(state: tauri::State<TrackingState>) -> bool {
+    state.0.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
+fn set_autostart(enabled: bool, app: AppHandle) -> Result<bool, String> {
+    let manager = app.autolaunch();
+    if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    }
+    .map_err(|err| err.to_string())?;
+    manager.is_enabled().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn is_autostart_enabled(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -130,14 +271,103 @@ fn pet_state_payload(runtime: &GameRuntime) -> PetStatePayload {
     }
 }
 
+fn dashboard_payload(app: &AppHandle, runtime: &GameRuntime) -> Result<DashboardPayload, String> {
+    let today = Local::now().date_naive();
+    let tomorrow = today + Duration::days(1);
+    let week_start = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+    let today_start_unix = local_midnight_unix(today)?;
+    let tomorrow_start_unix = local_midnight_unix(tomorrow)?;
+    let week_start_unix = local_midnight_unix(week_start)?;
+    let mut food = runtime
+        .state_store
+        .food_stats_since(today, week_start)
+        .map_err(|err| err.to_string())?;
+    food.today = food.today.max(runtime.economy.food_earned_today);
+    food.week = food.week.max(food.today);
+    Ok(DashboardPayload {
+        pet: pet_state_payload(runtime),
+        settings: runtime.settings.clone(),
+        providers: ProviderStatusPayload {
+            claude_code_detected: ClaudeCodeProvider::default().detect(),
+        },
+        stats: StatsPayload {
+            food,
+            today_tokens: runtime
+                .ledger
+                .token_totals_between(today_start_unix, tomorrow_start_unix)
+                .map_err(|err| err.to_string())?,
+            week_tokens: runtime
+                .ledger
+                .token_totals_between(week_start_unix, tomorrow_start_unix)
+                .map_err(|err| err.to_string())?,
+            streak_days: if runtime.economy.food_earned_today > 0 {
+                1
+            } else {
+                0
+            },
+        },
+        monitor_count: available_monitor_count(app),
+    })
+}
+
+fn local_midnight_unix(day: chrono::NaiveDate) -> Result<i64, String> {
+    let naive = day
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| "invalid local date".to_string())?;
+    let local = Local
+        .from_local_datetime(&naive)
+        .earliest()
+        .or_else(|| Local.from_local_datetime(&naive).latest())
+        .ok_or_else(|| "local midnight is unavailable".to_string())?;
+    Ok(local.timestamp())
+}
+
+fn validate_settings(mut settings: AppSettings) -> Result<AppSettings, String> {
+    settings.pet_size = settings.pet_size.clamp(70, 160);
+    settings.starter_egg = normalize_starter_egg(&settings.starter_egg);
+    Ok(settings)
+}
+
+fn normalize_starter_egg(value: &str) -> String {
+    match value {
+        "ember" | "sprout" | "bubble" => value.to_string(),
+        _ => "sprout".to_string(),
+    }
+}
+
+fn available_monitor_count(app: &AppHandle) -> u32 {
+    app.get_webview_window("overlay")
+        .and_then(|window| window.available_monitors().ok())
+        .map(|monitors| monitors.len() as u32)
+        .filter(|count| *count > 0)
+        .unwrap_or(1)
+}
+
+fn apply_overlay_settings(app: &AppHandle, settings: &AppSettings) {
+    overlay_window::fit_to_monitor(app, settings.monitor_index, settings.wayland_fallback);
+    let _ = app.emit(
+        "overlay_settings_changed",
+        OverlaySettingsPayload {
+            pet_size: settings.pet_size,
+        },
+    );
+}
+
 fn apply_token_event(
     app: &AppHandle,
     shared: &Arc<Mutex<GameRuntime>>,
+    tracking_paused: &Arc<AtomicBool>,
     event: &TokenEvent,
 ) -> Result<(), String> {
+    if tracking_paused.load(Ordering::SeqCst) {
+        return Ok(());
+    }
     let mut runtime = shared
         .lock()
         .map_err(|_| "game runtime mutex poisoned".to_string())?;
+    if !runtime.settings.claude_code_enabled {
+        return Ok(());
+    }
     reconcile_and_persist(&mut runtime).map_err(|err| err.to_string())?;
 
     let inserted = runtime
@@ -155,6 +385,10 @@ fn apply_token_event(
         .state_store
         .save_economy_state(&runtime.economy, now_unix)
         .map_err(|err| err.to_string())?;
+    runtime
+        .state_store
+        .increment_daily_food(Local::now().date_naive(), outcome.food_earned)
+        .map_err(|err| err.to_string())?;
 
     for index in 0..outcome.food_earned {
         let payload = FoodSpawnedPayload {
@@ -168,7 +402,11 @@ fn apply_token_event(
     Ok(())
 }
 
-fn start_claude_code_watcher(app: AppHandle, shared: Arc<Mutex<GameRuntime>>) {
+fn start_claude_code_watcher(
+    app: AppHandle,
+    shared: Arc<Mutex<GameRuntime>>,
+    tracking_paused: Arc<AtomicBool>,
+) {
     let provider = ClaudeCodeProvider::default();
     if !provider.detect() {
         return;
@@ -182,7 +420,7 @@ fn start_claude_code_watcher(app: AppHandle, shared: Arc<Mutex<GameRuntime>>) {
 
     std::thread::spawn(move || {
         while let Ok(event) = rx.recv() {
-            if let Err(err) = apply_token_event(&app, &shared, &event) {
+            if let Err(err) = apply_token_event(&app, &shared, &tracking_paused, &event) {
                 eprintln!("failed to apply token event {}: {err}", event.message_id);
             }
         }
@@ -193,6 +431,10 @@ fn start_claude_code_watcher(app: AppHandle, shared: Arc<Mutex<GameRuntime>>) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_dashboard(app)
+        }))
         .setup(|app| {
             let config =
                 economy::load_economy_config(app.handle()).expect("failed to load economy.toml");
@@ -201,27 +443,69 @@ pub fn run() {
             let db_path = app_data_dir.join("tokengochi.sqlite3");
             let ledger = Ledger::open(&db_path)?;
             let state_store = GameStateStore::open(&db_path)?;
+            let settings = validate_settings(state_store.load_app_settings()?)?;
             let mut economy = state_store
                 .load_economy_state()?
                 .unwrap_or_else(|| EconomyState::new(today, now_unix));
             economy.reconcile_elapsed_time(now_unix, today, &config);
             state_store.save_economy_state(&economy, now_unix)?;
+            state_store.save_app_settings(&settings, now_unix)?;
 
             let shared = Arc::new(Mutex::new(GameRuntime {
                 config: config.clone(),
                 economy,
                 ledger,
                 state_store,
+                settings: settings.clone(),
             }));
+            let tracking_paused = Arc::new(AtomicBool::new(settings.tracking_paused));
 
             app.manage(EconomyConfigState(Mutex::new(config)));
             app.manage(GameRuntimeState(shared.clone()));
-            tray::setup(app.handle());
-            overlay_window::fit_to_primary_monitor(app.handle());
-            start_claude_code_watcher(app.handle().clone(), shared);
+            app.manage(TrackingState(tracking_paused.clone()));
+            let settings_shared = shared.clone();
+            let persist_tracking_change = Arc::new(move |paused: bool| {
+                let Ok(mut runtime) = settings_shared.lock() else {
+                    eprintln!("failed to persist tracking pause: game runtime mutex poisoned");
+                    return;
+                };
+                runtime.settings.tracking_paused = paused;
+                if let Err(err) = runtime
+                    .state_store
+                    .save_app_settings(&runtime.settings, Local::now().timestamp())
+                {
+                    eprintln!("failed to persist tracking pause: {err}");
+                }
+            });
+            tray::setup(
+                app.handle(),
+                tracking_paused.clone(),
+                persist_tracking_change,
+            )?;
+            apply_overlay_settings(app.handle(), &settings);
+            start_claude_code_watcher(app.handle().clone(), shared, tracking_paused);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_config, get_pet_state, pet_ate])
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_config,
+            get_pet_state,
+            get_dashboard_state,
+            pet_ate,
+            update_settings,
+            complete_onboarding,
+            set_tracking_paused,
+            is_tracking_paused,
+            set_autostart,
+            is_autostart_enabled
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

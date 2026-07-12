@@ -17,7 +17,8 @@ if (!canvasContext) {
 }
 const ctx: CanvasRenderingContext2D = canvasContext;
 
-const PET_SIZE = 72;
+const BASE_PET_SIZE = 72;
+let PET_SIZE = BASE_PET_SIZE;
 const FOOD_SIZE = 18;
 const HIT_PADDING = 10;
 const ACTIVE_TICK_MS = 1000 / 30;
@@ -45,6 +46,10 @@ interface PetStatePayload {
 interface FoodSpawnedPayload {
   id: string;
   pendingFood: number;
+}
+
+interface OverlaySettingsPayload {
+  petSize: number;
 }
 
 interface Food {
@@ -91,6 +96,15 @@ function resizeCanvas(): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   pet.x = clamp(pet.x, 0, petMaxX());
   pet.y = groundY();
+}
+
+function applyOverlaySettings(settings: OverlaySettingsPayload): void {
+  PET_SIZE = Math.round(BASE_PET_SIZE * clamp(settings.petSize, 70, 160) / 100);
+  pet.x = clamp(pet.x, 0, petMaxX());
+  pet.y = groundY();
+  foods.forEach((food) => {
+    food.targetY = groundY() + PET_SIZE - FOOD_SIZE - 8;
+  });
 }
 
 function groundY(): number {
@@ -369,6 +383,10 @@ void listen<FoodSpawnedPayload>("food_spawned", (event) => {
 void listen<PetStatePayload>("pet_state_changed", (event) => {
   state = event.payload;
   ensurePendingFoodVisible();
+});
+
+void listen<OverlaySettingsPayload>("overlay_settings_changed", (event) => {
+  applyOverlaySettings(event.payload);
 });
 
 resizeCanvas();
