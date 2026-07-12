@@ -78,10 +78,14 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: ui/dashboard/package-lock.json
+          cache-dependency-path: |
+            ui/dashboard/package-lock.json
+            ui/overlay/package-lock.json
 
       - name: Install frontend dependencies
-        run: npm ci --prefix ui/dashboard
+        run: |
+          npm ci --prefix ui/dashboard
+          npm ci --prefix ui/overlay
 
       - name: Install tauri-cli
         run: cargo install tauri-cli --version "^2" --locked

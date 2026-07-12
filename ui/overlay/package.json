@@ -1,0 +1,18 @@
+{
+  "name": "tokengochi-overlay",
+  "version": "0.1.0",
+  "description": "Canvas 2D overlay renderer + behavior AI for the pet window. Vanilla TypeScript, no framework (see docs/decisions/0003-canvas-sprite-rendering.md).",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --format=esm --outfile=../dashboard/static/overlay/overlay.js && cp index.html ../dashboard/static/overlay/index.html",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "~5.6.2"
+  }
+}

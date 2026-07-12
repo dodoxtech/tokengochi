@@ -9,3 +9,9 @@
 /ui/dashboard/node_modules/
 /ui/dashboard/.svelte-kit/
 /ui/dashboard/build/
+
+# ui/overlay build output gets copied into ui/dashboard/static/overlay/ at
+# build time (see ui/overlay/package.json "build" script) - generated, not
+# source.
+/ui/dashboard/static/overlay/
+/ui/overlay/node_modules/

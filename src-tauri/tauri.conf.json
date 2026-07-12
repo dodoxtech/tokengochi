@@ -4,17 +4,37 @@
   "version": "0.1.0",
   "identifier": "com.tokengochi.app",
   "build": {
-    "beforeDevCommand": "npm --prefix ../ui/dashboard run dev",
+    "beforeDevCommand": "npm --prefix ../ui/overlay run build && npm --prefix ../ui/dashboard run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm --prefix ../ui/dashboard run build",
+    "beforeBuildCommand": "npm --prefix ../ui/overlay run build && npm --prefix ../ui/dashboard run build",
     "frontendDist": "../ui/dashboard/build"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
+        "url": "/",
         "title": "tokengochi",
         "width": 800,
         "height": 600
+      },
+      {
+        "label": "overlay",
+        "url": "/overlay/index.html",
+        "title": "tokengochi-overlay",
+        "width": 1280,
+        "height": 800,
+        "x": 0,
+        "y": 0,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "resizable": false,
+        "focus": false,
+        "acceptFirstMouse": true,
+        "visible": true
       }
     ],
     "security": {

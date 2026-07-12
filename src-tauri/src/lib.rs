@@ -1,4 +1,5 @@
 mod economy;
+mod overlay_window;
 mod pet;
 mod store;
 mod tray;
@@ -32,6 +33,7 @@ pub fn run() {
                 economy::load_economy_config(app.handle()).expect("failed to load economy.toml");
             app.manage(EconomyState(Mutex::new(config)));
             tray::setup(app.handle());
+            overlay_window::fit_to_primary_monitor(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![get_config])
