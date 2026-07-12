@@ -90,19 +90,32 @@ impl EconomyState {
 
         loop {
             let today_count_so_far = self.food_earned_today + outcome.food_earned;
+            let under_hard_cap = today_count_so_far < config.daily_hard_cap;
+            let pantry_has_room = self.pantry + outcome.food_to_pantry < config.pantry_max;
+
+            // Check "is there anywhere for tokens to go" *before* checking
+            // affordability. The escalating cost of the next food can
+            // easily exceed whatever's left banked, which would otherwise
+            // make the loop exit via the affordability check below without
+            // ever noticing both the hard cap and the Pantry are already
+            // full - silently leaving leftover tokens sitting in
+            // `banked_tokens_today` instead of correctly discarding them
+            // (docs/knowledge/game-economy.md §2/§7: once both are full,
+            // nothing more can happen with today's tokens, regardless of
+            // amount).
+            if !under_hard_cap && !pantry_has_room {
+                outcome.tokens_wasted += self.banked_tokens_today;
+                self.banked_tokens_today = 0.0;
+                break;
+            }
+
             let next_food_index = today_count_so_far + outcome.food_to_pantry + 1;
             let cost = cost_of_nth_food(next_food_index, config);
 
             if self.banked_tokens_today < cost {
-                break;
-            }
-
-            let under_hard_cap = today_count_so_far < config.daily_hard_cap;
-            let pantry_has_room = self.pantry + outcome.food_to_pantry < config.pantry_max;
-
-            if !under_hard_cap && !pantry_has_room {
-                outcome.tokens_wasted += self.banked_tokens_today;
-                self.banked_tokens_today = 0.0;
+                // Not enough for the next food yet, but there's still a
+                // valid destination for it - carry it over as progress
+                // toward the next event (or tomorrow, once the day rolls).
                 break;
             }
 
