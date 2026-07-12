@@ -2,10 +2,21 @@
 //!
 //! Balance constants live in `economy.toml` (see
 //! `docs/knowledge/game-economy.md` §8) so tuning never requires a code
-//! change. This module currently only loads that config; conversion, caps,
-//! streak, and XP logic are tracked in
-//! `docs/tasks/backlog/0004-economy-engine-core.md`.
+//! change. Streak/quest bookkeeping (task 0009) and wiring this into the
+//! running app (consuming watcher events, persisting `EconomyState`, a
+//! `pet_ate` command, ...) are follow-up work - see
+//! `docs/tasks/active/0004-economy-engine-core.md` for exactly what's in
+//! scope here vs. later.
+#![allow(dead_code)]
 
 mod config;
+mod conversion;
+mod fullness;
+mod state;
+mod xp;
 
 pub use config::{load_economy_config, EconomyConfig};
+pub use conversion::{cost_of_nth_food, weighted_tokens};
+pub use fullness::{mood_from_fullness, mood_multiplier};
+pub use state::{ConversionOutcome, EconomyState};
+pub use xp::{level_for_xp, xp_required_for_level, MAX_LEVEL};

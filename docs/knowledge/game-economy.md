@@ -31,6 +31,7 @@ Design goals: reward *consistency* over *volume*, keep the pet emotionally stick
 - Token weighting to reflect real effort, not raw count: output tokens ×1.0, input tokens ×0.25, cache-read tokens ×0.05. Prevents cache-heavy sessions from flooding food.
 - **Daily soft cap with diminishing returns:** first 10 Food/day at full rate, then each subsequent Food costs ×1.5 more tokens (10 → 15 → 22.5…). Hard cap 20 Food/day. This is the core anti-"burn tokens to feed pet" mechanism.
 - Overflow tokens beyond the hard cap trickle into a **Pantry** (max 5 stored Food) that auto-feeds the pet on days with zero usage — smooths weekends and protects streak-adjacent mechanics.
+  - **Implementation decision (task 0004, `src-tauri/src/economy/state.rs`):** this doc didn't pin an exact conversion rate for Pantry-bound overflow, so the engine continues the *same* geometric escalation curve past the hard cap for Pantry food too (food #21 costs the same as the formula predicts, etc.), rather than a flat/discounted rate. Once the Pantry is also full (5/5), any further tokens that day are discarded entirely — reinforcing "token-burning is irrational" (§7) rather than finding a third bucket to put them in.
 
 ## 3. Hunger and Mood (retention without guilt)
 
