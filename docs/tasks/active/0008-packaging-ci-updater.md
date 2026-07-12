@@ -31,8 +31,8 @@ Out of scope: Homebrew/winget/Snap (backlog later per demand).
 
 ## Acceptance Criteria
 
-- [x] `git tag vX.Y.Z` → CI publishes installers for all 3 OS. (workflow implemented; not yet exercised with a real tag — needs repo secrets, see below)
-- [ ] Auto-update from previous version verified on each OS; pet state survives update. (wired end-to-end; cross-OS rehearsal still needed after the first real release)
+- [x] `git tag vX.Y.Z` → CI publishes installers for all 3 OS. Verified live: `v0.1.0` tag → all 4 matrix jobs (macOS arm64, macOS x64, Ubuntu, Windows) succeeded, run [29195401232](https://github.com/dodoxtech/tokengochi/actions/runs/29195401232).
+- [ ] Auto-update from previous version verified on each OS; pet state survives update. (wired end-to-end and artifacts built/signed successfully; the draft `v0.1.0` release still needs to be reviewed/published by the repo owner before the update endpoint resolves, then a real update rehearsal against a `v0.1.1` bump can run)
 - [x] Install docs in README.
 
 ## Dependencies
@@ -68,9 +68,15 @@ Verification:
 - Not yet run: a real `git tag vX.Y.Z` push (needs the updater secrets added to the GitHub repo first — this is a repo-state change, deferred to the user), and the actual cross-OS auto-update rehearsal, which can only happen after a real release exists.
 - Pre-existing, unrelated to this task: `cargo clippy --all-targets -- -D warnings` currently fails on `main` due to dead-code lint warnings in `src/pet/mod.rs` (evolution/usage-pattern fields not yet wired up). This doesn't block `release.yml` (which doesn't run clippy), but blocks the `fmt-clippy-test` job in `ci.yml`. Flagging for a follow-up task rather than fixing here since it's outside 0008's scope.
 
-### Follow-up before a real release
+### 2026-07-12 — live release rehearsal
 
-1. Move the updater private key into GitHub repo secrets, delete the local copy.
-2. Push a `v0.1.0` test tag and confirm `release.yml` produces a draft release with all 5 artifacts + `latest.json`.
-3. Install the pre-release build on each OS, then run a real update against a `v0.1.1` bump to confirm `tauri-plugin-updater` downloads/installs/relaunches and pet state (SQLite) survives.
-4. Fix the pre-existing clippy dead-code warnings blocking `ci.yml`'s lint job (unrelated to this task).
+- Committed all task-0008 changes (`2030a37`), pushed to `main`, tagged and pushed `v0.1.0`.
+- `.github/workflows/release.yml` ran end-to-end: all 4 matrix jobs (macOS arm64, macOS x64, Ubuntu, Windows) completed with `conclusion: success` — confirms `tauri-action` builds, signs updater artifacts, and pushes a release for all 3 target OS from a real tag push.
+- The resulting GitHub Release is a **draft** by design (`releaseDraft: true` in the workflow) — invisible to unauthenticated API calls, so its asset list needs manual confirmation in the GitHub UI by the repo owner before publishing.
+
+### Follow-up before this task is fully done
+
+1. Owner: review the `v0.1.0` draft release on GitHub (confirm all 5 installers + `latest.json` attached), then publish it.
+2. Owner or agent: bump to `v0.1.1` per [[../../knowledge/release-process|Release Process]], tag, push, install the published `v0.1.0` build, and confirm "Check for updates" in the dashboard downloads/installs/relaunches into `v0.1.1` with pet state (SQLite) intact. This is the last unchecked acceptance criterion.
+3. Delete the local updater private key copy (`/tmp/tokengochi-updater-keys/`) now that it's in GitHub secrets.
+4. Fix the pre-existing clippy dead-code warnings blocking `ci.yml`'s lint job (unrelated to this task, tracked separately).
