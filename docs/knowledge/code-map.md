@@ -24,83 +24,116 @@ Related: [[architecture|Architecture]] (data flow), [[game-economy|Game Economy]
 
 | I want to change... | Go to |
 |---|---|
-| How fast/where the pet walks | `ui/overlay/src/main.ts` → `updatePet()` (walk-to-food, walk-to-bed) |
-| Falling / being thrown / bouncing off edges | `ui/overlay/src/main.ts` → `updateTumble()`, `beginDrop()` |
-| Climbing onto other app windows | `ui/overlay/src/main.ts` → `maybeStartClimb()`, `updateClimb()` |
-| Idle random gags (sneeze/stare/chase-tail) | `ui/overlay/src/main.ts` → `maybeTriggerIdleGag()` |
-| Click reactions / rage-quit combo | `ui/overlay/src/main.ts` → `triggerClickReaction()`, `updateSulk()` |
-| Petting / stroke detection | `ui/overlay/src/main.ts` → `maybeTriggerPetting()` |
-| Dragging the pet with the mouse | `ui/overlay/src/main.ts` → `mousedown`/`mousemove`/`mouseup` listeners (~L1042-1107) |
-| Eating food (walk-to-food + eat timer) | `ui/overlay/src/main.ts` → `updatePet()` tail (food branch), `pet_ate` IPC |
-| What animation/sprite plays for a mode | `ui/overlay/src/main.ts` → `MODE_ANIMATION_TAG`, `drawPet()` |
-| Speed/physics tuning constants | `ui/overlay/src/main.ts` → constants block (~L131-159) |
+| How fast/where the pet walks | `ui/overlay/src/behavior.ts` → `updatePet()` (walk-to-food, walk-to-bed) |
+| Falling / being thrown / bouncing off edges (drag-release only) | `ui/overlay/src/behavior.ts` → `updateTumble()`, `beginDrop()` |
+| Climbing onto other app windows / jumping back down to eat or sleep | `ui/overlay/src/behavior.ts` → `maybeStartClimb()`, `updateClimb()`, `beginDescend()` |
+| Idle random gags (sneeze/stare/chase-tail) | `ui/overlay/src/behavior.ts` → `maybeTriggerIdleGag()` |
+| Click reactions / rage-quit combo | `ui/overlay/src/behavior.ts` → `triggerClickReaction()`, `updateSulk()` |
+| Petting / stroke detection | `ui/overlay/src/behavior.ts` → `maybeTriggerPetting()` |
+| Dragging the pet with the mouse | `ui/overlay/src/input.ts` → `mousedown`/`mousemove`/`mouseup` listeners inside `initInput()` |
+| Eating food (walk-to-food + eat timer) | `ui/overlay/src/behavior.ts` → `updatePet()` tail (food branch), `pet_ate` IPC |
+| What animation/sprite plays for a mode | `ui/overlay/src/atlas.ts` → `MODE_ANIMATION_TAG`; `ui/overlay/src/render.ts` → `drawPet()` |
+| Speed/physics tuning constants | `ui/overlay/src/constants.ts` |
 | Mood bands / hunger / evolution stage | `src-tauri/src/pet/mod.rs` (`Mood`, `stage_for_level`, `EvolutionBranch`) |
 | Fullness decay, XP, streaks math | `src-tauri/src/economy/*.rs` (see [[game-economy]]) |
 | Persisted pet state (SQLite row) | `src-tauri/src/store/game_state.rs` |
 | Tauri commands callable from the overlay (`pet_ate`, `pet_petted`, ...) | `src-tauri/src/lib.rs` (~L124-373, `#[tauri::command]` fns) |
-| Click-through / hit-testing / window flags | `ui/overlay/src/main.ts` → `isOverPet()`, `updateHitTest()`; `src-tauri/src/overlay_window.rs` |
+| Click-through / hit-testing / window flags | `ui/overlay/src/state.ts` → `isOverPet()`; `ui/overlay/src/input.ts` → `updateHitTest()`; `src-tauri/src/overlay_window.rs` |
 | Climbable window segments (other app windows) | `src-tauri/src/window_geometry/mod.rs` (`enumerate_windows`), emitted as `window_segments_changed` |
-| Sprite atlas / animation frame lookup | `ui/overlay/src/main.ts` → `loadAtlas()`, `frameForTag()` |
+| Sprite atlas / animation frame lookup | `ui/overlay/src/atlas.ts` → `loadAtlas()`, `frameForTag()` |
 
-## Frontend: `ui/overlay/src/main.ts` (behavior AI + renderer, ~1150 lines)
+## Frontend: `ui/overlay/src/` (behavior AI + renderer)
 
-This is a single-file canvas game loop. It owns the `pet` mutable object
-(`const pet = {...}`, ~L233) and a `PetMode` state machine (~L165).
+Originally one ~1150-line `main.ts`; split by responsibility (2026-07-13) so
+each file stays reviewable on its own. `main.ts` is now just wiring: the
+`tick()` game loop, DOM/Tauri event listener registration, and startup
+sequence. It owns no game logic itself — everything below is imported.
 
-Layout, top to bottom:
+Shared mutable state (the `pet` object, live server `state`, `foods[]`,
+`windowSegments`, `hover`/`pointerDown` flags, `PET_SIZE`) lives in
+`state.ts` and is imported by the other modules; where a module can't
+reassign an imported `let` directly (JS/TS restriction on live bindings),
+`state.ts` exposes a setter (`setState()`, `setHover()`, `setPointerDown()`,
+`setWindowSegments()`).
 
-1. **Sprite atlas loading** (~L31-113): `AtlasFrame`/`AtlasJson`/`SpriteAtlas`
-   types, `loadImage()`, `loadAtlas()`, `frameForTag()`. Sprite sheets live in
-   `ui/assets/sprites/` (aseprite exports).
-2. **Tuning constants** (~L131-159): `WALK_SPEED`, `GRAVITY`,
-   `MAX_THROW_SPEED`, `CLIMB_SPEED`, `CLICK_COMBO_COUNT`, gag/climb interval
-   ranges, etc. Change pet speed/feel here first.
-3. **Types** (~L165-231): `PetMode` (union of `BaseMode | PhysicsMode |
-   OverrideMode`), `Segment` (a climbable window edge), `Food`.
-4. **Mutable state** (~L233-300): `pet` object (`x`, `y`, `vx`, `vy`, `mode`,
-   `supportId`, `climbPhase`, ...), `foods[]` array.
-5. **Geometry/window helpers** (~L311-378): `resizeCanvas()`,
-   `refreshWindowOffset()`, `groundY()`, `petMaxX()`, `currentSegments()`,
-   `landingSurfaceAt()` (decides what surface the pet lands on when falling).
-6. **Hit-testing / click-through** (~L399-451): `isOverPet()`,
-   `updateHitTest()` (toggles OS click-through so clicks pass through except
-   over the pet sprite), `pollCursorForHover()`.
-7. **Physics/override modes** (~L461-642, comment-marked "Task 0012
-   physics/override modes"):
-   - `beginDrop(now, vx, vy)` — enters free-fall (`mode = "tumble"`).
-   - `updateTumble()` — gravity integration, bounces off screen edges,
-     detects landing via `landingSurfaceAt()`.
-   - `maybeStartClimb()` / `updateClimb()` — picks a random other-app window
-     edge from `windowSegments`, walks to it, climbs up (`CLIMB_SPEED`),
-     sits for a random duration, then drops back off.
-   - `maybeTriggerIdleGag()` — random sneeze/stare/chase-tail.
-   - `triggerClickReaction()` / `updateSulk()` — click combo → dizzy/sulk
-     escalation; otherwise squash/spin/look/exclaim reaction.
-   - `maybeTriggerPetting()` — hover-and-hold detection, calls `pet_petted`
-     IPC (rate-limited client-side by `PET_BUMP_COOLDOWN_MS`, mirrored
-     server-side).
-8. **Baseline behavior** (~L646-753, comment-marked "Baseline behavior
-   0005/0006"): `updatePet(dtMs, now)` — the main state-machine dispatcher.
-   Mode precedence: `dragged` → `tumble` → `climb` → time-boxed overrides
-   (`dizzy`/`sulk`/`react`/`petted`/`gag`) → petting check → forced drop if
-   not on the floor → seek nearest unclaimed food → walk to bed when idle →
-   idle gag/climb rolls → `idle`. Food-eating sub-branch at the bottom calls
-   `invoke("pet_ate")`.
-9. **Rendering** (~L749-1021): `drawPet()`, `drawSpiralEyes()` (dizzy),
-   `drawOverlayEffects()`/`drawEffect()`/`drawGagEffect()`, `drawCosmetic()`,
-   `drawFood()`/`drawFoodSkin()`, `drawFurniture()`, `drawTooltip()`,
-   `draw()` (composes the frame).
-10. **Game loop** (~L1022-1041): `tick(now)` — computes `dtMs`, throttles to
-    `ACTIVE_TICK_MS` (30fps moving) or `IDLE_TICK_MS` (2fps idle/sleeping),
-    calls `updatePet()` + `updateFood()` + `draw()`.
-11. **DOM input listeners** (~L1042-1119): `mousemove` (drag tracking,
-    `DRAG_PROMOTE_PX` threshold turns a click into a drag → `mode =
-    "dragged"`), `mousedown`, `mouseup` (releasing a drag calls
-    `beginDrop()` with throw velocity, capped by `MAX_THROW_SPEED`), `blur`.
-12. **Tauri event listeners** (~L1119-1152): `food_spawned` (push into
-    `foods[]`), `pet_state_changed`, `overlay_settings_changed`,
-    `window_segments_changed` (updates `windowSegments` used by climb logic),
-    initial `get_pet_state` invoke on startup.
+- **`dom.ts`** — `canvas`, `ctx` (2D context), `appWindow` (Tauri window
+  handle). Everything else that touches the DOM/Tauri window imports these.
+- **`types.ts`** — `PetMode` (union of `BaseMode | PhysicsMode |
+  OverrideMode`), `Segment` (a climbable window edge), `Food`,
+  `PetStatePayload` and the other Tauri event payload shapes.
+- **`constants.ts`** — `WALK_SPEED`, `GRAVITY`, `MAX_THROW_SPEED`,
+  `CLIMB_SPEED` (slow ascent), `JUMP_UP_HEIGHT`/`JUMP_UP_SPEED` (anticipation
+  hop before a deliberate jump-down), `JUMP_DOWN_SPEED` (fast, unlike the
+  climb), `LANDING_PAUSE_MS` (recovery beat after landing), `CLICK_COMBO_COUNT`,
+  gag/climb interval ranges, etc. Change pet speed/feel here first.
+- **`atlas.ts`** — `AtlasFrame`/`AtlasJson`/`SpriteAtlas` types,
+  `loadImage()`, `loadAtlas()`, `frameForTag()`, `MODE_ANIMATION_TAG`.
+  Sprite sheets live in `ui/assets/sprites/` (aseprite exports).
+- **`state.ts`** — the `pet` object (`x`, `y`, `vx`, `vy`, `mode`,
+  `supportId`, `climbPhase`, `jumpPeakY`, ...), the live `state:
+  PetStatePayload`, `foods[]`, `PET_SIZE`; geometry/window helpers
+  `resizeCanvas()`, `applyOverlaySettings()`, `groundY()`, `petMaxX()`,
+  `currentSegments()`, `landingSurfaceAt()` (decides what surface the pet
+  lands on when falling — uses a strict `>` on `surfaceY` so the ledge the
+  pet is falling *from* is never re-selected as its own landing target,
+  which used to cause an infinite tumble/idle loop), `isOverPet()`.
+- **`behavior.ts`** (comment-marked sections for "Task 0012 physics/override
+  modes" and the 0005/0006 baseline):
+  - `beginDrop(now, vx, vy)` — enters free-fall (`mode = "tumble"`); reserved
+    for an actual throw/drag release (see `input.ts`), not the pet's own
+    decision to come down.
+  - `updateTumble()` — gravity integration, bounces off screen edges,
+    detects landing via `landingSurfaceAt()`; every landing (any surface, not
+    just the floor) goes through the same `mode = "landing"` /
+    `LANDING_PAUSE_MS` recovery beat described below.
+  - `beginDescend()` — the pet's own deliberate way down from a ledge
+    (`mode = "climb"`, `climbPhase = "jump-up"` then `"jump-fall"`): a short
+    anticipation hop up (`JUMP_UP_HEIGHT`/`JUMP_UP_SPEED`) followed by a fast
+    fall to `groundY()` (`JUMP_DOWN_SPEED`), ending in `mode = "landing"` for
+    a `LANDING_PAUSE_MS` recovery beat before the pet acts again.
+  - `maybeStartClimb()` / `updateClimb()` — picks a random other-app window
+    edge from `windowSegments`, walks to it, climbs up (`CLIMB_SPEED`), pauses
+    in `climbPhase = "landed"` for `LANDING_PAUSE_MS` (same recovery beat as
+    any other landing), then sits indefinitely (`climbPhase = "sit"`) — it
+    only calls `beginDescend()` to jump back down once there's unclaimed food
+    waiting on the floor (or the ledge itself becomes invalid/walked off).
+    There is no idle timer that pulls the pet down on its own.
+  - `maybeTriggerIdleGag()` — random sneeze/stare/chase-tail.
+  - `triggerClickReaction()` / `updateSulk()` — click combo → dizzy/sulk
+    escalation; otherwise squash/spin/look/exclaim reaction.
+  - `maybeTriggerPetting()` — hover-and-hold detection, calls `pet_petted`
+    IPC (rate-limited client-side by `PET_BUMP_COOLDOWN_MS`, mirrored
+    server-side).
+  - `updatePet(dtMs, now)` — the main state-machine dispatcher. Mode
+    precedence: `dragged` → `tumble` → `climb` → time-boxed overrides
+    (`dizzy`/`sulk`/`react`/`petted`/`gag`/`landing`) → petting check → if
+    not on the floor, `beginDescend()` *only when* there's unclaimed food
+    waiting (otherwise stays put on the ledge) → seek nearest unclaimed food
+    → walk to bed when idle → idle gag/climb rolls → `idle`. Food-eating
+    sub-branch at the bottom calls `invoke("pet_ate")`.
+  - `updateFood(dtMs)` — animates queued food sprites dropping to the floor.
+- **`render.ts`** — `drawPet()` (picks the idle animation tag instead of
+  `MODE_ANIMATION_TAG.climb` while `climbPhase === "sit"`, since sitting on a
+  ledge should read as idle, not mid-climb), `drawSpiralEyes()` (dizzy),
+  `drawOverlayEffects()`/`drawEffect()`/`drawGagEffect()`, `drawCosmetic()`,
+  `drawFood()`/`drawFoodSkin()`, `drawFurniture()`, `drawTooltip()`,
+  `draw()` (composes the frame — called once per `tick()`).
+- **`input.ts`** — `updateHitTest()` (toggles OS click-through so clicks
+  pass through except over the pet sprite), `pollCursorForHover()` (breaks
+  the click-through chicken-and-egg deadlock), `initInput()` registers
+  `mousemove` (drag tracking, `DRAG_PROMOTE_PX` threshold turns a click into
+  a drag → `mode = "dragged"`), `mousedown`, `mouseup` (releasing a drag
+  calls `beginDrop()` with throw velocity, capped by `MAX_THROW_SPEED`),
+  `blur`.
+- **`main.ts`** — `tick(now)` (computes `dtMs`, throttles to
+  `ACTIVE_TICK_MS` (30fps moving) or `IDLE_TICK_MS` (2fps idle/sleeping) —
+  stays on the active rate through `LANDING_PAUSE_MS` after a landing so the
+  jump-down/recovery beat doesn't stutter, calls `updatePet()` +
+  `updateFood()` + `draw()`); Tauri event listeners
+  `food_spawned` (push into `foods[]`), `pet_state_changed`,
+  `overlay_settings_changed`, `window_segments_changed` (updates
+  `windowSegments` used by climb logic); initial `get_pet_state` invoke and
+  `initInput()` call on startup.
 
 ## Backend: Rust (`src-tauri/src/`)
 
