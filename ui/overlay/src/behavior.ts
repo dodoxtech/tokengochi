@@ -65,6 +65,14 @@ function randomClimbDelay(now: number): number {
   return now + MIN_CLIMB_INTERVAL_MS + Math.random() * (MAX_CLIMB_INTERVAL_MS - MIN_CLIMB_INTERVAL_MS);
 }
 
+// Food waiting on the ground always takes priority over any in-progress
+// "go somewhere else" action (climbing to a ledge, storming off after a
+// click combo) - those should abort so the pet can redirect to the food
+// instead of finishing the trip first.
+function hasWaitingFood(): boolean {
+  return foods.some((food) => !food.eaten && food.y >= food.targetY);
+}
+
 export function updateFood(dtMs: number): void {
   for (const food of foods) {
     if (food.y < food.targetY) {
@@ -209,7 +217,7 @@ function updateClimb(dtMs: number, now: number): void {
     }
     // Otherwise the pet just stays put on the ledge indefinitely - it only
     // has a reason to come down once there's food waiting to be fetched.
-    if (foods.some((food) => !food.eaten && food.y >= food.targetY)) {
+    if (hasWaitingFood()) {
       beginDescend();
     }
     return;
@@ -223,6 +231,13 @@ function updateClimb(dtMs: number, now: number): void {
   }
 
   if (pet.climbPhase === "approach") {
+    if (hasWaitingFood()) {
+      // Still on the floor, hasn't committed to the climb yet - abandon the
+      // ledge trip and let the main loop redirect to the food next tick.
+      pet.mode = "idle";
+      pet.climbTargetId = null;
+      return;
+    }
     const dx = pet.approachX - pet.x;
     pet.facing = dx >= 0 ? 1 : -1;
     if (Math.abs(dx) > 4) {
@@ -336,8 +351,13 @@ export function updatePet(dtMs: number, now: number): void {
     return;
   }
   if (pet.mode === "sulk" && now < pet.overrideUntil) {
-    updateSulk(dtMs);
-    return;
+    if (hasWaitingFood()) {
+      pet.mode = "idle";
+      pet.overrideUntil = 0;
+    } else {
+      updateSulk(dtMs);
+      return;
+    }
   }
   if (pet.mode === "react" && now < pet.overrideUntil) {
     return;

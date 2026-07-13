@@ -71,7 +71,11 @@ mod macos {
         };
 
         let own_pid = std::process::id() as i64;
-        let mut segments = Vec::new();
+
+        // `copy_window_info` returns windows front-to-back. Keep that order:
+        // it's what lets us later treat earlier entries as "in front of, and
+        // therefore able to occlude" later ones.
+        let mut windows: Vec<(u32, CGRect)> = Vec::new();
 
         for ptr in array.get_all_values() {
             let dict: CFDictionary<CFType, CFType> =
@@ -96,15 +100,68 @@ mod macos {
                 continue;
             }
 
-            segments.push(WindowSegment {
-                id: id as u32,
-                x0: rect.origin.x,
-                x1: rect.origin.x + rect.size.width,
-                y: rect.origin.y,
-            });
+            windows.push((id as u32, rect));
+        }
+
+        // `kCGWindowListOptionOnScreenOnly` excludes minimized/off-space
+        // windows, but it still reports windows that are fully or partially
+        // hidden behind another window on top of them. Only the portion of
+        // each window's top edge that isn't covered by a window in front of
+        // it is actually visible/climbable, so clip each edge against every
+        // window earlier in the (front-to-back) list.
+        let mut segments = Vec::new();
+        for (i, (id, rect)) in windows.iter().enumerate() {
+            let y = rect.origin.y;
+            let mut visible = vec![(rect.origin.x, rect.origin.x + rect.size.width)];
+
+            for (_, front_rect) in &windows[..i] {
+                let front_y0 = front_rect.origin.y;
+                let front_y1 = front_rect.origin.y + front_rect.size.height;
+                if front_y0 <= y && y <= front_y1 {
+                    visible = subtract_interval(visible, front_rect.origin.x, front_rect.origin.x + front_rect.size.width);
+                    if visible.is_empty() {
+                        break;
+                    }
+                }
+            }
+
+            let full_width = rect.size.width;
+            let unsplit = visible.len() == 1 && (visible[0].1 - visible[0].0 - full_width).abs() < f64::EPSILON;
+
+            for (index, (x0, x1)) in visible.into_iter().enumerate() {
+                if x1 - x0 < MIN_WIDTH {
+                    continue;
+                }
+                segments.push(WindowSegment {
+                    id: if unsplit { *id } else { id.wrapping_mul(1000) + index as u32 },
+                    x0,
+                    x1,
+                    y,
+                });
+            }
         }
 
         segments
+    }
+
+    /// Removes the `[cut_x0, cut_x1)` range from every interval in
+    /// `intervals`, splitting an interval into two where the cut falls in
+    /// its middle.
+    fn subtract_interval(intervals: Vec<(f64, f64)>, cut_x0: f64, cut_x1: f64) -> Vec<(f64, f64)> {
+        let mut result = Vec::new();
+        for (a0, a1) in intervals {
+            if cut_x1 <= a0 || cut_x0 >= a1 {
+                result.push((a0, a1));
+                continue;
+            }
+            if cut_x0 > a0 {
+                result.push((a0, cut_x0));
+            }
+            if cut_x1 < a1 {
+                result.push((cut_x1, a1));
+            }
+        }
+        result
     }
 
     fn number_value(dict: &CFDictionary<CFType, CFType>, key: core_foundation::string::CFStringRef) -> Option<i64> {

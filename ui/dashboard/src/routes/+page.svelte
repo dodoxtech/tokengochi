@@ -352,6 +352,8 @@
         </div>
       </section>
 
+      <!--
+      Album panel disabled: no suitable art assets yet. Remove this comment wrapper to re-enable.
       <section class="panel album-panel">
         <div class="section-title">
           <div>
@@ -376,6 +378,7 @@
           {/each}
         </div>
       </section>
+      -->
 
       <section class="panel settings">
         <div class="section-title">

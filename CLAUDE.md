@@ -16,19 +16,25 @@ Before changing code or docs:
 
 Start with the `docs/` folder before making implementation decisions:
 
-- `docs/README.md` - documentation index and workflow.
-- `docs/index.md` - Obsidian map of content for quick navigation.
-- `docs/product.md` - product context, goals, users, and non-goals.
-- `docs/architecture.md` - technical structure and system decisions.
-- `docs/engineering.md` - development standards, testing, and review expectations.
-- `docs/agile.md` - Agile/Scrum process used by this project.
-- `docs/decisions/` - Architecture Decision Records (ADRs).
-- `docs/sprints/` - sprint goals, plans, reviews, and retrospectives.
-- `docs/knowledge/` - reusable notes, research, and domain references.
-- `docs/tasks/backlog/` - prioritized product backlog items and technical tasks.
-- `docs/tasks/active/` - tasks currently in progress or ready to pick up.
-- `docs/tasks/done/` - completed tasks, moved here after verification.
-- `docs/templates/` - templates agents should copy when creating new docs or tasks.
+- [docs/README.md](docs/README.md) - documentation index and workflow.
+- [docs/index.md](docs/index.md) - Obsidian map of content for quick navigation.
+- [docs/product.md](docs/product.md) - product context, goals, users, and non-goals.
+- [docs/architecture.md](docs/architecture.md) - technical structure and system decisions.
+- [docs/engineering.md](docs/engineering.md) - development standards, testing, and review expectations.
+- [docs/agile.md](docs/agile.md) - Agile/Scrum process used by this project.
+- [docs/decisions/](docs/decisions/README.md) - Architecture Decision Records (ADRs).
+- [docs/sprints/](docs/sprints/README.md) - sprint goals, plans, reviews, and retrospectives.
+- [docs/knowledge/](docs/knowledge/README.md) - reusable notes, research, and domain references.
+  - [docs/knowledge/code-map.md](docs/knowledge/code-map.md) - map of the codebase structure.
+  - [docs/knowledge/game-economy.md](docs/knowledge/game-economy.md) - game economy design notes.
+  - [docs/knowledge/overlay-platform-notes.md](docs/knowledge/overlay-platform-notes.md) - overlay/platform-specific notes.
+  - [docs/knowledge/token-tracking.md](docs/knowledge/token-tracking.md) - token tracking design notes.
+  - [docs/knowledge/release-process.md](docs/knowledge/release-process.md) - release process notes.
+- [docs/tasks/](docs/tasks/README.md) - task workflow overview.
+  - [docs/tasks/backlog/](docs/tasks/backlog/) - prioritized product backlog items and technical tasks.
+  - [docs/tasks/active/](docs/tasks/active/) - tasks currently in progress or ready to pick up.
+  - [docs/tasks/done/](docs/tasks/done/) - completed tasks, moved here after verification.
+- [docs/templates/](docs/templates/README.md) - templates agents should copy when creating new docs or tasks.
 
 ## Task Workflow
 
