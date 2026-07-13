@@ -64,7 +64,7 @@ Design goals: reward *consistency* over *volume* and keep the pet emotionally st
 
 - Cosmetics: hats, scarves, palettes (5–30 Sparks).
 - Food skins: sushi set, bánh mì set, bento set (10 Sparks).
-- Desk furniture: a tiny bed, plant, monitor-top perch the pet actually uses (15–40 Sparks).
+- Desk furniture: a tiny bed, plant the pet actually uses (15 Sparks).
 - **Prestige (Elder only):** retire the pet to the album Hall of Fame, hatch a new egg with +10% permanent XP and an heirloom cosmetic. Resets the loop for long-term players.
 
 ## 7. Anti-Abuse and Economy Health

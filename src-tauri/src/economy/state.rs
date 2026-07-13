@@ -204,7 +204,7 @@ impl EconomyState {
         }
 
         match item.kind {
-            ShopItemKind::Cosmetic | ShopItemKind::Heirloom => {
+            ShopItemKind::Cosmetic => {
                 self.equipped_cosmetic = Some(item.id.to_string());
                 Ok(())
             }
@@ -601,7 +601,6 @@ fn default_furniture_x(item_id: &str) -> f64 {
     match item_id {
         "furniture-bed" => 0.18,
         "furniture-plant" => 0.78,
-        "furniture-perch" => 0.5,
         _ => 0.5,
     }
 }

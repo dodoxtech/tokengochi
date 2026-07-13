@@ -1,0 +1,34 @@
+id: hat-mushroom
+type: sprite
+subject: mushroom cap cosmetic
+description: >
+  A red mushroom-dome cap with off-white spots and a pale underside band,
+  sized to sit on the hatchling pet head as a wearable cosmetic.
+keywords: [mushroom, cap, hat, cosmetic, sparks]
+placement:
+  intended_use: cosmetic overlay and Sparks shop preview
+  context: Tokengochi Sparks sinks shop, overlay renderer
+  do: [use at native pixel size or integer scale, preserve transparent alpha]
+  dont: [do not stretch non-uniformly, do not bilinear scale]
+style:
+  profile: docs/assets/styles/style-profile-hat-mushroom.yaml
+  art_style: Sweetie 16 pixel art
+  stroke: 1px native pixel outline
+  shading: flat two-tone
+palette: ["#1a1c2c", "#ef7d57", "#ffcd75", "#f4f4f4", "#94b0c2", "#b13e53", "#29366f", "#566c86"]
+background: transparent
+dimensions:
+  master: ui/assets/sprites/source/hat-mushroom-master.png
+  output: 32x32
+  aspect: "1:1"
+safe_area: inner padded cell
+accessibility:
+  alt_text: "Mushroom Cap pixel-art item"
+files:
+  - path: ui/assets/sprites/items/hat-mushroom-sprite-32x32.png
+    size: 32x32
+    format: png
+    bytes: 313
+source:
+  model: codex image generation
+  prompt: "Tokengochi Mushroom Cap cosmetic item sprite, red mushroom-dome cap with off-white spots, Sweetie 16 pixel art, chroma-magenta plate"

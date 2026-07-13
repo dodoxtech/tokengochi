@@ -1,0 +1,33 @@
+id: hat-leaf
+type: sprite
+subject: leaf cap cosmetic
+description: >
+  A tiny green cap with a light-green leaf sprout, sized to sit on the hatchling pet head.
+keywords: [leaf, cap, hat, cosmetic, sparks]
+placement:
+  intended_use: cosmetic overlay and Sparks shop preview
+  context: Tokengochi Sparks sinks shop, overlay renderer
+  do: [use at native pixel size or integer scale, preserve transparent alpha]
+  dont: [do not stretch non-uniformly, do not bilinear scale]
+style:
+  profile: docs/assets/styles/style-profile-hat-leaf.yaml
+  art_style: Sweetie 16 pixel art
+  stroke: 1px native pixel outline
+  shading: flat two-tone
+palette: ["#1a1c2c", "#ef7d57", "#ffcd75", "#a7f070", "#38b764", "#f4f4f4", "#94b0c2", "#b13e53", "#29366f"]
+background: transparent
+dimensions:
+  master: ui/assets/sprites/source/shop-items-master.png
+  output: 32x32
+  aspect: "32:32"
+safe_area: inner padded cell
+accessibility:
+  alt_text: "Leaf Cap pixel-art item"
+files:
+  - path: ui/assets/sprites/items/hat-leaf-sprite-32x32.png
+    size: 32x32
+    format: png
+    bytes: 299
+source:
+  model: codex image generation
+  prompt: "Tokengochi Sparks sink item sprite, leaf cap cosmetic, Sweetie 16 pixel art, chroma-magenta plate"

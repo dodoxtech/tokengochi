@@ -112,7 +112,6 @@ pub enum ShopItemKind {
     Cosmetic,
     FoodSkin,
     Furniture,
-    Heirloom,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -152,16 +151,10 @@ pub const SHOP_CATALOG: &[ShopItem] = &[
         price_sparks: 5,
     },
     ShopItem {
-        id: "scarf-sunset",
-        label: "Sunset Scarf",
+        id: "hat-mushroom",
+        label: "Mushroom Cap",
         kind: ShopItemKind::Cosmetic,
         price_sparks: 12,
-    },
-    ShopItem {
-        id: "halo-heirloom",
-        label: "Heirloom Halo",
-        kind: ShopItemKind::Heirloom,
-        price_sparks: 0,
     },
     ShopItem {
         id: "food-sushi",
@@ -186,12 +179,6 @@ pub const SHOP_CATALOG: &[ShopItem] = &[
         label: "Desk Plant",
         kind: ShopItemKind::Furniture,
         price_sparks: 15,
-    },
-    ShopItem {
-        id: "furniture-perch",
-        label: "Monitor Perch",
-        kind: ShopItemKind::Furniture,
-        price_sparks: 25,
     },
 ];
 

@@ -10,6 +10,10 @@ import {
   CLIMB_SPEED,
   DROP_SPEED,
   EAT_MS,
+  FOOD_BOUNCE_MAX_DRIFT_X,
+  FOOD_BOUNCE_MAX_HEIGHT,
+  FOOD_BOUNCE_MIN_HEIGHT,
+  FOOD_SIZE,
   GAG_VARIANTS,
   GRAVITY,
   JUMP_DOWN_SPEED,
@@ -73,10 +77,20 @@ function hasWaitingFood(): boolean {
   return foods.some((food) => !food.eaten && food.y >= food.targetY);
 }
 
-export function updateFood(dtMs: number): void {
+export function updateFood(dtMs: number, now: number): void {
   for (const food of foods) {
     if (food.y < food.targetY) {
-      food.y = Math.min(food.targetY, food.y + (DROP_SPEED * dtMs) / 1000);
+      const next = Math.min(food.targetY, food.y + (DROP_SPEED * dtMs) / 1000);
+      if (next >= food.targetY) {
+        food.landedAt = now;
+        food.bounceHeight =
+          FOOD_BOUNCE_MIN_HEIGHT + Math.random() * (FOOD_BOUNCE_MAX_HEIGHT - FOOD_BOUNCE_MIN_HEIGHT);
+        const drift = (Math.random() * 2 - 1) * FOOD_BOUNCE_MAX_DRIFT_X;
+        const minX = 0;
+        const maxX = Math.max(minX, window.innerWidth - FOOD_SIZE);
+        food.bounceDriftX = clamp(food.x + drift, minX, maxX) - food.x;
+      }
+      food.y = next;
     }
   }
 }

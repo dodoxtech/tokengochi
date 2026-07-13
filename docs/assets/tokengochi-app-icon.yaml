@@ -1,0 +1,52 @@
+id: tokengochi-app-icon
+type: icon
+subject: Tokengochi hatchling mascot app icon
+description: >
+  A centered Sweetie 16 pixel-art hatchling mascot with a yellow round body,
+  cream belly, orange cheeks and feet, black eyes, and a green leaf tuft,
+  placed on a warm cream rounded-square app-icon tile with transparent outside corners.
+keywords: [app-icon, tauri, hatchling, mascot, pixel-art, tokengochi]
+placement:
+  intended_use: Tauri desktop application icon bundle
+  target_dir: src-tauri/icons
+  context: macOS, Windows, and Linux app launchers and installer metadata
+  do: [use generated size ladder as-is, preserve transparent rounded corners and optical padding for Dock contrast]
+  dont: [do not crop the mascot, do not add text, do not replace with generic Tauri icon]
+style:
+  profile: docs/assets/styles/style-profile-tokengochi-app-icon.yaml
+  reference: docs/assets/refs/hatchling-app-icon-reference.png
+  art_style: Sweetie 16 pixel art
+  outline: "uniform #1a1c2c pixel outline"
+  shading: flat two-tone, top-left light
+palette: ["#1a1c2c", "#ef7d57", "#ffcd75", "#a7f070", "#38b764", "#f4f4f4", "#94b0c2"]
+background: warm cream rounded-square tile with transparent outside corners
+optical_footprint:
+  master_visible_bbox: [71, 71, 952, 952]
+  master_visible_scale: 0.86
+  measurement: alpha > 128
+accessibility:
+  alt_text: "Pixel-art yellow hatchling mascot app icon"
+source:
+  model: gpt-image
+  generated: 2026-07-13
+  prompt: "Tokengochi hatchling mascot app icon, Sweetie 16 pixel art, opaque cream tile"
+  master: assets/generated/icons/tokengochi-app-icon-master-1024x1024.png
+  postprocess: tools/export_tauri_icons.py
+files:
+  - { path: assets/generated/icons/tokengochi-app-icon-master-1024x1024.png, size: 1024x1024, format: png, bytes: 506169 }
+  - { path: src-tauri/icons/icon.png, size: 512x512, format: png, bytes: 172570 }
+  - { path: src-tauri/icons/32x32.png, size: 32x32, format: png, bytes: 1812 }
+  - { path: src-tauri/icons/128x128.png, size: 128x128, format: png, bytes: 14108 }
+  - { path: src-tauri/icons/128x128@2x.png, size: 256x256, format: png, bytes: 47178 }
+  - { path: src-tauri/icons/icon.icns, format: icns, bytes: 1029452 }
+  - { path: src-tauri/icons/icon.ico, format: ico, bytes: 78335 }
+  - { path: src-tauri/icons/Square30x30Logo.png, size: 30x30, format: png, bytes: 1649 }
+  - { path: src-tauri/icons/Square44x44Logo.png, size: 44x44, format: png, bytes: 2781 }
+  - { path: src-tauri/icons/Square71x71Logo.png, size: 71x71, format: png, bytes: 5558 }
+  - { path: src-tauri/icons/Square89x89Logo.png, size: 89x89, format: png, bytes: 7674 }
+  - { path: src-tauri/icons/Square107x107Logo.png, size: 107x107, format: png, bytes: 10644 }
+  - { path: src-tauri/icons/Square142x142Logo.png, size: 142x142, format: png, bytes: 17128 }
+  - { path: src-tauri/icons/Square150x150Logo.png, size: 150x150, format: png, bytes: 18360 }
+  - { path: src-tauri/icons/Square284x284Logo.png, size: 284x284, format: png, bytes: 57578 }
+  - { path: src-tauri/icons/Square310x310Logo.png, size: 310x310, format: png, bytes: 68283 }
+  - { path: src-tauri/icons/StoreLogo.png, size: 50x50, format: png, bytes: 3283 }

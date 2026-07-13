@@ -146,6 +146,8 @@ So the full deliverable is **41 frames across 2 PNG sheets + 2 JSON files + 1 pa
 - Generated image-model master artwork and rebuilt the runtime sheets with
   `ui/assets/sprites/generate-from-masters.mjs` (uses `sharp`). Masters are
   retained under `ui/assets/sprites/source/` for reproducible post-processing.
+  (2026-07-13: this script moved to `ui/assets/sprites/scripts/`; see
+  [[sprite-asset-pipeline]].)
 - `hatchling.png`: PASS — 256×160, 31 JSON frames, all seven required tags,
   Sweetie-16-only opaque pixels, binary alpha, and all corners alpha 0.
 - `effects.png`: PASS — 128×32, 10 JSON frames, all four required tags,

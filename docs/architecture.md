@@ -15,7 +15,7 @@ tags:
 Tokengochi is a **Tauri v2** app (Rust core + web frontend) with two windows:
 
 1. **Pet overlay window** — transparent, borderless, always-on-top, click-through except on the pet/food sprites. Renders the pixel-art pet on an HTML canvas.
-2. **Dashboard window** (opened from tray) — stats, settings, collection album, cosmetics shop.
+2. **Dashboard window** (hidden during normal startup; opened from tray, or shown for first-run onboarding) — stats, settings, collection album, cosmetics shop.
 
 ```
 ┌────────────────────── Rust core (Tauri) ──────────────────────┐

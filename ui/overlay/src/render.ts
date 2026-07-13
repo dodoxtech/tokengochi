@@ -3,9 +3,36 @@
 
 import { ctx } from "./dom";
 import { effectsAtlas, frameForTag, hatchlingAtlas, MODE_ANIMATION_TAG } from "./atlas";
+import { FOOD_BOUNCE_MS } from "./constants";
 import { PET_SIZE, clamp, foods, furnitureX, groundY, hover, pet, state } from "./state";
 let animMode: string | null = null;
 let animStartedAt = 0;
+
+const ITEM_SPRITE_PATHS: Record<string, string> = {
+  "hat-leaf": "./sprites/items/hat-leaf-sprite-32x32.png",
+  "hat-mushroom": "./sprites/items/hat-mushroom-sprite-32x32.png",
+  "food-sushi": "./sprites/items/food-sushi-sprite-32x32.png",
+  "food-banh-mi": "./sprites/items/food-banh-mi-sprite-32x32.png",
+  "furniture-bed": "./sprites/items/furniture-bed-sprite-80x40.png",
+  "furniture-plant": "./sprites/items/furniture-plant-sprite-80x40.png",
+};
+
+const itemSprites = Object.fromEntries(
+  Object.entries(ITEM_SPRITE_PATHS).map(([id, src]) => {
+    const image = new Image();
+    image.src = src;
+    return [id, image];
+  }),
+) as Record<string, HTMLImageElement>;
+
+function drawItemSprite(id: string, x: number, y: number, w: number, h: number): boolean {
+  const image = itemSprites[id];
+  if (!image?.complete || image.naturalWidth === 0) {
+    return false;
+  }
+  ctx.drawImage(image, x, y, w, h);
+  return true;
+}
 
 function drawPet(now: number): void {
   // Sitting on a ledge (climbPhase "sit") reads as idle - only the
@@ -152,6 +179,9 @@ function drawGagEffect(cx: number, cy: number, now: number): void {
 function drawCosmetic(now: number): void {
   switch (state.equippedCosmetic) {
     case "hat-leaf":
+      if (drawItemSprite("hat-leaf", -20, -43, 40, 40)) {
+        break;
+      }
       ctx.fillStyle = "#1a1c2c";
       ctx.fillRect(-18, -28, 34, 5);
       ctx.fillStyle = "#38b764";
@@ -159,11 +189,18 @@ function drawCosmetic(now: number): void {
       ctx.fillStyle = "#a7f070";
       ctx.fillRect(4, -37, 13, 5);
       break;
-    case "scarf-sunset":
+    case "hat-mushroom":
+      if (drawItemSprite("hat-mushroom", -20, -43, 40, 40)) {
+        break;
+      }
+      ctx.fillStyle = "#1a1c2c";
+      ctx.fillRect(-18, -27, 36, 6);
       ctx.fillStyle = "#b13e53";
-      ctx.fillRect(-22, 8, 43, 6);
-      ctx.fillStyle = "#ef7d57";
-      ctx.fillRect(12, 13, 8, 15);
+      ctx.fillRect(-16, -38, 32, 12);
+      ctx.fillStyle = "#f4f4f4";
+      ctx.fillRect(-10, -36, 5, 5);
+      ctx.fillRect(2, -34, 5, 5);
+      ctx.fillRect(-2, -40, 4, 4);
       break;
     case "halo-heirloom":
       ctx.strokeStyle = "#ffcd75";
@@ -181,8 +218,14 @@ function drawFood(now: number): void {
       continue;
     }
     const pulse = Math.sin(now / 140 + food.x) * 1.5;
-    const x = Math.round(food.x);
-    const y = Math.round(food.y + pulse);
+    const sinceLanding = now - food.landedAt;
+    const bouncing = sinceLanding >= 0 && sinceLanding < FOOD_BOUNCE_MS;
+    const bounceProgress = bouncing ? sinceLanding / FOOD_BOUNCE_MS : 1;
+    const bounce = bouncing ? -Math.sin(bounceProgress * Math.PI) * food.bounceHeight : 0;
+    // Settle the sideways roll/nudge in ease-out fashion so it lands before the hop finishes.
+    const drift = food.bounceDriftX * (1 - Math.pow(1 - bounceProgress, 3));
+    const x = Math.round(food.x + drift);
+    const y = Math.round(food.y + pulse + bounce);
 
     drawFoodSkin(x, y);
   }
@@ -190,6 +233,9 @@ function drawFood(now: number): void {
 
 function drawFoodSkin(x: number, y: number): void {
   if (state.equippedFoodSkin === "food-sushi") {
+    if (drawItemSprite("food-sushi", x - 6, y - 7, 32, 32)) {
+      return;
+    }
     ctx.fillStyle = "#1a1c2c";
     ctx.fillRect(x + 1, y + 5, 16, 9);
     ctx.fillStyle = "#f4f4f4";
@@ -199,6 +245,9 @@ function drawFoodSkin(x: number, y: number): void {
     return;
   }
   if (state.equippedFoodSkin === "food-banh-mi") {
+    if (drawItemSprite("food-banh-mi", x - 6, y - 7, 32, 32)) {
+      return;
+    }
     ctx.fillStyle = "#1a1c2c";
     ctx.fillRect(x + 1, y + 4, 16, 11);
     ctx.fillStyle = "#ffcd75";
@@ -222,6 +271,9 @@ function drawFurniture(): void {
     const x = Math.round(furnitureX(item));
     const y = groundY() + PET_SIZE - 20;
     if (item.itemId === "furniture-bed") {
+      if (drawItemSprite("furniture-bed", x, y - 6, 80, 40)) {
+        continue;
+      }
       ctx.fillStyle = "#1a1c2c";
       ctx.fillRect(x, y + 15, 78, 14);
       ctx.fillStyle = "#29366f";
@@ -229,6 +281,9 @@ function drawFurniture(): void {
       ctx.fillStyle = "#73eff7";
       ctx.fillRect(x + 9, y + 4, 24, 10);
     } else if (item.itemId === "furniture-plant") {
+      if (drawItemSprite("furniture-plant", x - 18, y - 7, 80, 40)) {
+        continue;
+      }
       ctx.fillStyle = "#1a1c2c";
       ctx.fillRect(x + 12, y + 14, 22, 18);
       ctx.fillStyle = "#ef7d57";
@@ -237,11 +292,6 @@ function drawFurniture(): void {
       ctx.fillRect(x + 7, y + 4, 12, 12);
       ctx.fillStyle = "#a7f070";
       ctx.fillRect(x + 24, y, 14, 16);
-    } else if (item.itemId === "furniture-perch") {
-      ctx.fillStyle = "#1a1c2c";
-      ctx.fillRect(x, y + 2, 70, 8);
-      ctx.fillStyle = "#566c86";
-      ctx.fillRect(x + 4, y + 1, 62, 5);
     }
   }
 }

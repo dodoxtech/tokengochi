@@ -1,0 +1,45 @@
+id: tokengochi-app-icon
+source_ref: docs/assets/refs/hatchling-app-icon-reference.png
+medium: pixel-art
+palette:
+  - "#1a1c2c"
+  - "#ef7d57"
+  - "#ffcd75"
+  - "#a7f070"
+  - "#38b764"
+  - "#f4f4f4"
+  - "#94b0c2"
+swatches:
+  - { hex: "#1a1c2c", role: outline, weight: 0.10 }
+  - { hex: "#ef7d57", role: shadow-cheeks-feet, weight: 0.12 }
+  - { hex: "#ffcd75", role: mascot-body, weight: 0.28 }
+  - { hex: "#a7f070", role: leaf-highlight, weight: 0.03 }
+  - { hex: "#38b764", role: leaf-shadow, weight: 0.02 }
+  - { hex: "#f4f4f4", role: belly-background, weight: 0.40 }
+  - { hex: "#94b0c2", role: optional-cool-shadow, weight: 0.01 }
+line: { weight: "uniform pixel outline", color: "#1a1c2c", style: uniform }
+shading: flat-two-tone
+values_per_material: 3
+lighting: top-left
+camera: front-3-4
+framing:
+  canvas: square
+  padding: generous
+  background: warm cream rounded-square app icon tile with transparent outside corners
+  optical_scale: 0.86
+prompt_suffix: "Sweetie 16 pixel-art app icon, crisp hard pixel edges, uniform dark outline, flat two-tone cel shading, top-left light, warm cream rounded-square tile with transparent outside corners, centered at roughly 86 percent optical footprint, readable at 16px"
+negative:
+  - "square unrounded tile"
+  - "black corner fill"
+  - "gradients"
+  - "glossy 3D"
+  - "bevels"
+  - "purple/blue AI glow"
+  - "text or letters"
+  - "soft blur"
+  - "photorealism"
+confidence:
+  palette: high
+  medium: high
+  lighting: high
+  small_size_readability: medium

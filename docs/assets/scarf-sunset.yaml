@@ -1,0 +1,33 @@
+id: scarf-sunset
+type: sprite
+subject: sunset scarf cosmetic
+description: >
+  A chunky muted-red scarf with coral dangling tails, sized to wrap around the hatchling pet neck.
+keywords: [scarf, sunset, cosmetic, sparks]
+placement:
+  intended_use: cosmetic overlay and Sparks shop preview
+  context: Tokengochi Sparks sinks shop, overlay renderer
+  do: [use at native pixel size or integer scale, preserve transparent alpha]
+  dont: [do not stretch non-uniformly, do not bilinear scale]
+style:
+  profile: docs/assets/styles/style-profile-scarf-sunset.yaml
+  art_style: Sweetie 16 pixel art
+  stroke: 1px native pixel outline
+  shading: flat two-tone
+palette: ["#1a1c2c", "#ef7d57", "#ffcd75", "#a7f070", "#38b764", "#f4f4f4", "#94b0c2", "#b13e53", "#29366f"]
+background: transparent
+dimensions:
+  master: ui/assets/sprites/source/shop-items-master.png
+  output: 32x32
+  aspect: "32:32"
+safe_area: inner padded cell
+accessibility:
+  alt_text: "Sunset Scarf pixel-art item"
+files:
+  - path: ui/assets/sprites/items/scarf-sunset-sprite-32x32.png
+    size: 32x32
+    format: png
+    bytes: 347
+source:
+  model: codex image generation
+  prompt: "Tokengochi Sparks sink item sprite, sunset scarf cosmetic, Sweetie 16 pixel art, chroma-magenta plate"

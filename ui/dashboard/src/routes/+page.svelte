@@ -193,6 +193,18 @@
     return dashboard?.pet.ownedItems.includes(item.id) ?? false;
   }
 
+  const ITEM_PREVIEWS: Record<string, { src: string; alt: string }> = {
+    "hat-leaf": { src: "/overlay/sprites/items/hat-leaf-sprite-32x32.png", alt: "Leaf Cap pixel-art item" },
+    "hat-mushroom": { src: "/overlay/sprites/items/hat-mushroom-sprite-32x32.png", alt: "Mushroom Cap pixel-art item" },
+    "food-sushi": { src: "/overlay/sprites/items/food-sushi-sprite-32x32.png", alt: "Sushi Food pixel-art item" },
+    "food-banh-mi": { src: "/overlay/sprites/items/food-banh-mi-sprite-32x32.png", alt: "Banh Mi Food pixel-art item" },
+    "furniture-bed": { src: "/overlay/sprites/items/furniture-bed-sprite-80x40.png", alt: "Tiny Bed pixel-art item" },
+    "furniture-plant": { src: "/overlay/sprites/items/furniture-plant-sprite-80x40.png", alt: "Desk Plant pixel-art item" },
+  };
+  function itemPreview(item: ShopItem) {
+    return ITEM_PREVIEWS[item.id];
+  }
+
   function furniturePlacement(itemId: string): number {
     return dashboard?.pet.furniture.find((item) => item.itemId === itemId)?.x ?? 0.5;
   }
@@ -219,6 +231,7 @@
     <button class="ghost" onclick={refresh} disabled={busy}>Refresh</button>
   </header>
 
+  <div class="scroll-area">
   {#if error}
     <p class="error">{error}</p>
   {/if}
@@ -310,10 +323,18 @@
             <h2>Sparks sinks</h2>
           </div>
           <span>{dashboard.pet.ownedItems.length} owned</span>
+          {#if import.meta.env.DEV}
+            <button class="ghost" onclick={() => applyPetCommand("debug_add_sparks", { amount: 100 })}>
+              Debug: +100 Sparks
+            </button>
+          {/if}
         </div>
         <div class="shop-grid">
           {#each dashboard.shopCatalog as item}
             <article class="shop-item">
+              {#if itemPreview(item)}
+                <img class="item-preview" src={itemPreview(item).src} alt={itemPreview(item).alt} width="56" height="56" />
+              {/if}
               <span>{item.kind}</span>
               <strong>{item.label}</strong>
               <small>{item.priceSparks} Sparks</small>
@@ -513,9 +534,18 @@
       </section>
     {/if}
   {/if}
+  </div>
 </main>
 
 <style>
+  :global(html),
+  :global(body) {
+    height: 100%;
+    overflow: hidden;
+  }
+  :global(html) {
+    background: #101725;
+  }
   :global(body) {
     margin: 0;
     background: #101725;
@@ -525,7 +555,10 @@
   main {
     max-width: 920px;
     margin: auto;
-    padding: 32px 20px 56px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 0 20px;
   }
   header,
   .section-title {
@@ -533,6 +566,16 @@
     justify-content: space-between;
     align-items: center;
     gap: 16px;
+  }
+  header {
+    flex: 0 0 auto;
+    background: #101725;
+    padding: 32px 0 12px;
+  }
+  .scroll-area {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding-bottom: 56px;
   }
   h1,
   h2,
@@ -681,23 +724,30 @@
     display: grid;
     gap: 12px;
   }
-  .shop,
-  .album-panel {
+  .shop {
     display: grid;
     gap: 14px;
   }
-  .shop-grid,
-  .album-grid {
+  .shop-grid {
     display: grid;
     gap: 12px;
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .shop-item,
-  .album-card {
+  .shop-item {
     min-height: 0;
   }
   .shop-item button {
     margin-top: 6px;
+  }
+  .item-preview {
+    background: #0c1220;
+    border: 1px solid #26354d;
+    border-radius: 8px;
+    display: block;
+    image-rendering: pixelated;
+    margin-bottom: 4px;
+    object-fit: contain;
+    padding: 6px;
   }
   .mini-field {
     display: grid;
@@ -764,8 +814,7 @@
     }
     .stat-grid,
     .egg-row,
-    .shop-grid,
-    .album-grid {
+    .shop-grid {
       grid-template-columns: 1fr;
     }
     .field {

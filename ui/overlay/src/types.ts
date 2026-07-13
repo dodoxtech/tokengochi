@@ -66,6 +66,11 @@ export interface Food {
   y: number;
   targetY: number;
   eaten: boolean;
+  landedAt: number;
+  /** Randomized per-landing so the hop height varies (capped) instead of always popping the same amount. */
+  bounceHeight: number;
+  /** Randomized per-landing sideways roll/nudge applied over the bounce, +right/-left. */
+  bounceDriftX: number;
 }
 
 export interface PointerSample {

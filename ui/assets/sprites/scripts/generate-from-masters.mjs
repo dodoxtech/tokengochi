@@ -28,9 +28,9 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import sharp from '../../overlay/node_modules/sharp/dist/index.mjs';
+import sharp from '../../../overlay/node_modules/sharp/dist/index.mjs';
 
-const root = path.resolve(import.meta.dirname);
+const root = path.resolve(import.meta.dirname, '..');
 const HARD_THRESHOLD = 200;
 
 async function readRgba(file) {

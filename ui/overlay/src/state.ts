@@ -161,7 +161,22 @@ export function spawnFood(id: string): void {
     y: -FOOD_SIZE,
     targetY,
     eaten: false,
+    landedAt: -Infinity,
+    bounceHeight: 0,
+    bounceDriftX: 0,
   });
+}
+
+// Eaten food stays in the array only long enough for its landing/eat beat to
+// finish playing - once marked eaten it has nothing left to update or draw,
+// so leaving it in `foods` forever would grow the array without bound over a
+// long-running session (every tick/draw walks the whole thing).
+export function pruneEatenFood(): void {
+  for (let i = foods.length - 1; i >= 0; i -= 1) {
+    if (foods[i].eaten) {
+      foods.splice(i, 1);
+    }
+  }
 }
 
 export function ensurePendingFoodVisible(): void {

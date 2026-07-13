@@ -372,6 +372,21 @@ fn prestige_pet(
     })
 }
 
+#[tauri::command]
+fn debug_add_sparks(
+    app: AppHandle,
+    amount: u32,
+    state: tauri::State<GameRuntimeState>,
+) -> Result<PetStatePayload, String> {
+    if !cfg!(debug_assertions) {
+        return Err("debug_add_sparks is only available in development builds".to_string());
+    }
+    mutate_pet_state(app, state, |runtime| {
+        runtime.economy.sparks = runtime.economy.sparks.saturating_add(amount);
+        Ok(())
+    })
+}
+
 fn mutate_pet_state<F>(
     app: AppHandle,
     state: tauri::State<GameRuntimeState>,
@@ -766,6 +781,9 @@ pub fn run() {
                 tracking_paused.clone(),
                 persist_tracking_change,
             )?;
+            if !settings.onboarding_complete {
+                tray::show_dashboard(app.handle());
+            }
             apply_overlay_settings(app.handle(), &settings);
             start_claude_code_watcher(
                 app.handle().clone(),
@@ -798,6 +816,7 @@ pub fn run() {
             equip_shop_item,
             place_furniture,
             prestige_pet,
+            debug_add_sparks,
             update_settings,
             complete_onboarding,
             set_tracking_paused,

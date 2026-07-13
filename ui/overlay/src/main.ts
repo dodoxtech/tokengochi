@@ -34,6 +34,7 @@ import {
   foods,
   groundY,
   pet,
+  pruneEatenFood,
   resizeCanvas,
   setState,
   setWindowSegments,
@@ -60,8 +61,9 @@ function tick(now: number): void {
   if (now - lastTick >= tickInterval) {
     const dtMs = now - lastTick;
     lastTick = now;
-    updateFood(dtMs);
+    updateFood(dtMs, now);
     updatePet(dtMs, now);
+    pruneEatenFood();
     draw(now);
   }
 

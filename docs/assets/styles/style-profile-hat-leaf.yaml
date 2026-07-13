@@ -1,0 +1,16 @@
+id: tokengochi-sweetie16-v1/hat-leaf
+palette: ["#1a1c2c", "#ef7d57", "#ffcd75", "#a7f070", "#38b764", "#f4f4f4", "#94b0c2", "#b13e53", "#29366f"]
+line:
+  weight: "1px native pixel outline"
+  style: uniform
+shading: flat-two-tone
+lighting: top-left
+camera: side
+proportions:
+  canvas: "32x32"
+  max_subject: "30x24"
+prompt_suffix: "strict Sweetie 16 pixel art, 1px #1a1c2c outline, flat top-left two-tone light, binary alpha, no anti-aliasing"
+negative: [gradients, partial-alpha, purple-or-blue-glow, bevels, non-palette-colors]
+source:
+  master: ui/assets/sprites/source/shop-items-master.png
+  plate: "#FF00FF"

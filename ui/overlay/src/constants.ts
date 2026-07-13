@@ -10,6 +10,10 @@ export const IDLE_TICK_MS = 1000 / 2;
 export const WALK_SPEED = 155;
 export const DROP_SPEED = 520;
 export const EAT_MS = 950;
+export const FOOD_BOUNCE_MS = 260; // duration of the little landing hop
+export const FOOD_BOUNCE_MIN_HEIGHT = 3; // px, lowest possible landing hop
+export const FOOD_BOUNCE_MAX_HEIGHT = 8; // px, hard cap so the hop never looks like a real jump
+export const FOOD_BOUNCE_MAX_DRIFT_X = 10; // px, max sideways roll/nudge on landing, either direction
 
 // Task 0012 tuning.
 export const GRAVITY = 2100; // px/s^2

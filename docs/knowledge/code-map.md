@@ -28,6 +28,7 @@ Related: [[architecture|Architecture]] (data flow), [[game-economy|Game Economy]
 | Falling / being thrown / bouncing off edges (drag-release only) | `ui/overlay/src/behavior.ts` → `updateTumble()`, `beginDrop()` |
 | Climbing onto other app windows / jumping back down to eat or sleep | `ui/overlay/src/behavior.ts` → `maybeStartClimb()`, `updateClimb()`, `beginDescend()` |
 | Idle random gags (sneeze/stare/chase-tail) | `ui/overlay/src/behavior.ts` → `maybeTriggerIdleGag()` |
+| Adding a new pet form, or a new gag/expression (yawn, dance, drink-break, …) | [[pet-action-pack-spec|Pet Action Pack Spec]] (required tag contract); planned batch in [[../tasks/backlog/0014-expanded-gag-expression-pack|0014]] |
 | Click reactions / rage-quit combo | `ui/overlay/src/behavior.ts` → `triggerClickReaction()`, `updateSulk()` |
 | Petting / stroke detection | `ui/overlay/src/behavior.ts` → `maybeTriggerPetting()` |
 | Dragging the pet with the mouse | `ui/overlay/src/input.ts` → `mousedown`/`mousemove`/`mouseup` listeners inside `initInput()` |
@@ -69,6 +70,11 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
 - **`atlas.ts`** — `AtlasFrame`/`AtlasJson`/`SpriteAtlas` types,
   `loadImage()`, `loadAtlas()`, `frameForTag()`, `MODE_ANIMATION_TAG`.
   Sprite sheets live in `ui/assets/sprites/` (aseprite exports).
+  Sparks sink item sprites live in `ui/assets/sprites/items/` and are
+  regenerated from `ui/assets/sprites/source/shop-items-master.png` via
+  `ui/assets/sprites/scripts/generate-shop-items-from-master.mjs`. All
+  sprite regeneration scripts live in `ui/assets/sprites/scripts/` — see
+  [[sprite-asset-pipeline]].
 - **`state.ts`** — the `pet` object (`x`, `y`, `vx`, `vy`, `mode`,
   `supportId`, `climbPhase`, `jumpPeakY`, ...), the live `state:
   PetStatePayload`, `foods[]`, `PET_SIZE`; geometry/window helpers
@@ -76,7 +82,11 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
   `currentSegments()`, `landingSurfaceAt()` (decides what surface the pet
   lands on when falling — uses a strict `>` on `surfaceY` so the ledge the
   pet is falling *from* is never re-selected as its own landing target,
-  which used to cause an infinite tumble/idle loop), `isOverPet()`.
+  which used to cause an infinite tumble/idle loop), `isOverPet()`,
+  `pruneEatenFood()` (splices `eaten` entries out of `foods[]` — without it
+  the array grew unbounded over a long-running session since eaten food was
+  only ever flagged, never removed, and every tick/draw walked the whole
+  array).
 - **`behavior.ts`** (comment-marked sections for "Task 0012 physics/override
   modes" and the 0005/0006 baseline):
   - `beginDrop(now, vx, vy)` — enters free-fall (`mode = "tumble"`); reserved
@@ -111,7 +121,9 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
     waiting (otherwise stays put on the ledge) → seek nearest unclaimed food
     → walk to bed when idle → idle gag/climb rolls → `idle`. Food-eating
     sub-branch at the bottom calls `invoke("pet_ate")`.
-  - `updateFood(dtMs)` — animates queued food sprites dropping to the floor.
+  - `updateFood(dtMs, now)` — animates queued food sprites dropping to the
+    floor; stamps `food.landedAt = now` the frame each one reaches
+    `targetY`, which `render.ts` reads to draw a brief landing bounce.
 - **`render.ts`** — `drawPet()` (picks the idle animation tag instead of
   `MODE_ANIMATION_TAG.climb` while `climbPhase === "sit"`, since sitting on a
   ledge should read as idle, not mid-climb), `drawSpiralEyes()` (dizzy),
@@ -129,7 +141,7 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
   `ACTIVE_TICK_MS` (30fps moving) or `IDLE_TICK_MS` (2fps idle/sleeping) —
   stays on the active rate through `LANDING_PAUSE_MS` after a landing so the
   jump-down/recovery beat doesn't stutter, calls `updatePet()` +
-  `updateFood()` + `draw()`); Tauri event listeners
+  `updateFood()` + `pruneEatenFood()` + `draw()`); Tauri event listeners
   `food_spawned` (push into `foods[]`), `pet_state_changed`,
   `overlay_settings_changed`, `window_segments_changed` (updates
   `windowSegments` used by climb logic); initial `get_pet_state` invoke and
@@ -149,12 +161,14 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
 - **`store/game_state.rs`** (639 lines) — `GameRuntime`, persistence
   (rusqlite), `reconcile_and_persist()` (catches up hunger decay after the
   app was closed/asleep), builds the `PetStatePayload` sent to the frontend.
-- **`lib.rs`** (812 lines) — Tauri command registration and app wiring.
+- **`lib.rs`** (~826 lines) — Tauri command registration and app wiring.
   Commands the overlay calls: `get_pet_state` (~L134), `pet_ate` (~L262),
   `pet_petted` (~L294), `buy_shop_item`/`equip_shop_item`/`place_furniture`/
-  `prestige_pet` (~L320-374). `apply_token_event()` (~L557) is where a
-  watcher-reported token usage event turns into economy updates and
-  eventually a `food_spawned` emit. `start_window_geometry_watcher()`
+  `prestige_pet` (~L320-374), `debug_add_sparks` (~L376, dev-build-only —
+  no-ops behind `cfg!(debug_assertions)`, used by the dashboard's dev-only
+  Sparks button to manually test shop sinks without grinding). `apply_token_event()`
+  (~L557) is where a watcher-reported token usage event turns into economy
+  updates and eventually a `food_spawned` emit. `start_window_geometry_watcher()`
   (~L546) polls other-app window positions and emits
   `window_segments_changed`, which feeds the climb behavior above.
 - **`overlay_window.rs`** (138 lines) — `fit_to_monitor()` (positions the

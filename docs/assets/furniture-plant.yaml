@@ -1,0 +1,33 @@
+id: furniture-plant
+type: sprite
+subject: desk plant furniture
+description: >
+  A small terracotta desk plant with two green leaves, used as decorative overlay furniture.
+keywords: [plant, furniture, desk, sparks]
+placement:
+  intended_use: overlay furniture placement and Sparks shop preview
+  context: Tokengochi Sparks sinks shop, overlay renderer
+  do: [use at native pixel size or integer scale, preserve transparent alpha]
+  dont: [do not stretch non-uniformly, do not bilinear scale]
+style:
+  profile: docs/assets/styles/style-profile-furniture-plant.yaml
+  art_style: Sweetie 16 pixel art
+  stroke: 1px native pixel outline
+  shading: flat two-tone
+palette: ["#1a1c2c", "#ef7d57", "#ffcd75", "#a7f070", "#38b764", "#f4f4f4", "#94b0c2", "#b13e53", "#29366f"]
+background: transparent
+dimensions:
+  master: ui/assets/sprites/source/shop-items-master.png
+  output: 80x40
+  aspect: "80:40"
+safe_area: inner padded cell
+accessibility:
+  alt_text: "Desk Plant pixel-art item"
+files:
+  - path: ui/assets/sprites/items/furniture-plant-sprite-80x40.png
+    size: 80x40
+    format: png
+    bytes: 478
+source:
+  model: codex image generation
+  prompt: "Tokengochi Sparks sink item sprite, desk plant furniture, Sweetie 16 pixel art, chroma-magenta plate"

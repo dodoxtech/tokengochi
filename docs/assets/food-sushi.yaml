@@ -1,0 +1,33 @@
+id: food-sushi
+type: sprite
+subject: sushi food skin
+description: >
+  A small maki sushi bite with dark seaweed, off-white rice, and muted-red filling.
+keywords: [sushi, food, skin, sparks]
+placement:
+  intended_use: food drop skin and Sparks shop preview
+  context: Tokengochi Sparks sinks shop, overlay renderer
+  do: [use at native pixel size or integer scale, preserve transparent alpha]
+  dont: [do not stretch non-uniformly, do not bilinear scale]
+style:
+  profile: docs/assets/styles/style-profile-food-sushi.yaml
+  art_style: Sweetie 16 pixel art
+  stroke: 1px native pixel outline
+  shading: flat two-tone
+palette: ["#1a1c2c", "#ef7d57", "#ffcd75", "#a7f070", "#38b764", "#f4f4f4", "#94b0c2", "#b13e53", "#29366f"]
+background: transparent
+dimensions:
+  master: ui/assets/sprites/source/shop-items-master.png
+  output: 32x32
+  aspect: "32:32"
+safe_area: inner padded cell
+accessibility:
+  alt_text: "Sushi Food pixel-art item"
+files:
+  - path: ui/assets/sprites/items/food-sushi-sprite-32x32.png
+    size: 32x32
+    format: png
+    bytes: 278
+source:
+  model: codex image generation
+  prompt: "Tokengochi Sparks sink item sprite, sushi food skin, Sweetie 16 pixel art, chroma-magenta plate"
