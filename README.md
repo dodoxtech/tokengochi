@@ -2,11 +2,10 @@
 
 ![Tokengochi cover: a pixel-art hatchling pet watching AI token usage turn into food on a developer desktop](docs/assets/readme-cover-tokengochi-1600x900.png)
 
-A desktop pet that lives on your screen and grows on the tokens you burn using AI coding tools. Feed it Claude Code usage, watch it wander, eat, evolve, and hoard your ambient token spend as a Tamagotchi-style companion.
+A desktop pet that lives on your screen and stays happy on the tokens you burn using AI coding tools. Feed it Claude Code usage and watch it wander your screen, chase down, and eat food as a Tamagotchi-style companion — it's genuinely fun watching it scurry off to grab a bite.
 
 [![Latest release](https://img.shields.io/github/v/release/dodoxtech/tokengochi)](https://github.com/dodoxtech/tokengochi/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Ko-fi](https://img.shields.io/badge/support-ko--fi-ff5e5b.svg)](https://ko-fi.com/dodoxtech)
 
 See [docs/product.md](docs/product.md) for the full pitch and [docs/architecture.md](docs/architecture.md) for how it's built.
 
@@ -16,8 +15,8 @@ Developers already burn tokens all day using AI coding tools. Tokengochi turns t
 
 ## Features
 
-- 🐾 Transparent, always-on-top desktop pet that wanders your screen edges and taskbar
-- 🍜 Real AI token usage (starting with Claude Code) converts into food, XP, and evolution
+- 🐾 Transparent, always-on-top desktop pet that wanders your screen edges and taskbar, running around to nab food — it's fun just to watch
+- 🍜 Real AI token usage (starting with Claude Code) converts into food that keeps your pet happy and fed — every **20,000 weighted tokens** you burn earns **1 Food** (see [docs/knowledge/game-economy.md](docs/knowledge/game-economy.md) for the full conversion formula)
 - 📦 Local-first: state lives in SQLite on your machine, no network calls required for the core loop
 - 🖥️ Cross-platform: macOS, Windows, and Linux (X11 first, Wayland best-effort)
 - 🧩 Extensible provider model for other LLM CLIs/tools

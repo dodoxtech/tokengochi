@@ -144,15 +144,17 @@ function drawSpiralEyes(now: number): void {
  * the neck, so it must not trigger hat clearance below. */
 const HEADWEAR_COSMETICS = new Set(["hat-leaf", "hat-mushroom"]);
 
-/** Bubbles/badges that anchor above the head clip through a worn hat's brim
- * at their plain baseline offset, so they need a bit more clearance when
- * headwear is equipped - and, symmetrically, read better sitting closer to
- * the head (not floating) when the pet's bare-headed. */
-const HAT_CLEARANCE_PX = 20;
+/** Bubbles/badges anchor at a fixed fraction above the pet's sprite box, far
+ * above either the bare head or a worn hat's brim - both need pulling down
+ * to actually sit near what they're supposed to crown, just by different
+ * amounts (measured against the real sprites: the hat sits taller than the
+ * bare head silhouette, so it needs less of a pull-down). */
+const BARE_HEAD_CLEARANCE_PX = 46;
+const WORN_HAT_CLEARANCE_PX = 34;
 
 function aboveHeadY(baseY: number): number {
   const wearingHat = !!state.equippedCosmetic && HEADWEAR_COSMETICS.has(state.equippedCosmetic);
-  return wearingHat ? baseY : baseY + HAT_CLEARANCE_PX;
+  return baseY + (wearingHat ? WORN_HAT_CLEARANCE_PX : BARE_HEAD_CLEARANCE_PX);
 }
 
 /** Effects drawn outside the pet's own rotate/scale transform, from the
