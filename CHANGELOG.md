@@ -4,6 +4,16 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-14
+
+### Added
+
+- Dashboard now auto-checks for updates on open and shows a small "new version available" badge in the header, separate from the manual "Check for updates" flow in Settings.
+
+### Changed
+
+- Update check/download/install are now separate steps: an automatic startup check only detects availability (silently, with no error banner on failure), and downloading only starts when the user clicks the badge or the Settings button.
+
 ## [0.2.0] - 2026-07-14
 
 ### Added

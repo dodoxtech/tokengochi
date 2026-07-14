@@ -2,7 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
-  import { check } from "@tauri-apps/plugin-updater";
+  import { check, type Update } from "@tauri-apps/plugin-updater";
   import { relaunch } from "@tauri-apps/plugin-process";
 
   type PetState = {
@@ -66,7 +66,7 @@
     { id: "bubble", label: "Bubble", tone: "#73eff7" },
   ];
 
-  type UpdateStatus = "idle" | "checking" | "up-to-date" | "downloading" | "ready" | "error";
+  type UpdateStatus = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "ready" | "error";
 
   let dashboard = $state<DashboardState | null>(null);
   let autostart = $state(false);
@@ -75,6 +75,9 @@
   let error = $state("");
   let updateStatus = $state<UpdateStatus>("idle");
   let updateVersion = $state("");
+  // Holds the checked update handle so the "Download & install" action can
+  // reuse it instead of calling check() again.
+  let pendingUpdate: Update | null = null;
   let openaiApiKey = $state("");
   type AgentStatusHookStatus = { installed: boolean; settingsPath: string };
   let agentStatusHookStatus = $state<AgentStatusHookStatus | null>(null);
@@ -161,18 +164,33 @@
     }
   }
 
-  async function checkForUpdates() {
+  async function checkForUpdates(auto = false) {
     try {
       updateStatus = "checking";
-      error = "";
+      if (!auto) error = "";
       const update = await check();
       if (!update) {
         updateStatus = "up-to-date";
         return;
       }
+      pendingUpdate = update;
       updateVersion = update.version;
+      updateStatus = "available";
+    } catch (cause) {
+      // A background auto-check failing (e.g. offline on startup) shouldn't
+      // surface an alarming error banner - only report failures from an
+      // explicit, user-initiated check.
+      updateStatus = auto ? "idle" : "error";
+      if (!auto) error = String(cause);
+    }
+  }
+
+  async function downloadAndInstallUpdate() {
+    if (!pendingUpdate) return;
+    try {
       updateStatus = "downloading";
-      await update.downloadAndInstall();
+      error = "";
+      await pendingUpdate.downloadAndInstall();
       updateStatus = "ready";
     } catch (cause) {
       updateStatus = "error";
@@ -242,6 +260,7 @@
 
   onMount(() => {
     void refresh();
+    void checkForUpdates(true);
     const unlisten = listen<boolean>("tracking_changed", (event) => {
       if (dashboard) {
         dashboard.settings.trackingPaused = event.payload;
@@ -259,7 +278,20 @@
       <p class="eyebrow">Tokengochi</p>
       <h1>Dashboard</h1>
     </div>
-    <button class="ghost" onclick={refresh} disabled={busy}>Refresh</button>
+    <div class="header-actions">
+      {#if updateStatus === "available"}
+        <button class="update-badge" onclick={downloadAndInstallUpdate}>
+          v{updateVersion} available
+        </button>
+      {:else if updateStatus === "downloading"}
+        <span class="update-badge is-busy">Downloading v{updateVersion}…</span>
+      {:else if updateStatus === "ready"}
+        <button class="update-badge is-ready" onclick={installAndRestart}>
+          v{updateVersion} ready — restart
+        </button>
+      {/if}
+      <button class="ghost" onclick={refresh} disabled={busy}>Refresh</button>
+    </div>
   </header>
 
   <div class="scroll-area">
@@ -583,6 +615,8 @@
               Checking…
             {:else if updateStatus === "up-to-date"}
               You're on the latest version
+            {:else if updateStatus === "available"}
+              v{updateVersion} available
             {:else if updateStatus === "downloading"}
               Downloading v{updateVersion}…
             {:else if updateStatus === "ready"}
@@ -593,10 +627,12 @@
           </span>
           {#if updateStatus === "ready"}
             <button class="primary" onclick={installAndRestart}>Restart now</button>
+          {:else if updateStatus === "available"}
+            <button class="primary" onclick={downloadAndInstallUpdate}>Download &amp; install</button>
           {:else}
             <button
               class="ghost"
-              onclick={checkForUpdates}
+              onclick={() => checkForUpdates(false)}
               disabled={updateStatus === "checking" || updateStatus === "downloading"}
             >
               Check for updates
@@ -643,6 +679,29 @@
     flex: 0 0 auto;
     background: #101725;
     padding: 32px 0 12px;
+  }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .update-badge {
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    background: #2a3851;
+    color: #a7f070;
+    border: 1px solid #3a4d70;
+  }
+  .update-badge.is-busy {
+    color: #aebbd1;
+    cursor: default;
+  }
+  .update-badge.is-ready {
+    background: #a7f070;
+    color: #152016;
+    border-color: #a7f070;
   }
   .scroll-area {
     flex: 1 1 auto;
