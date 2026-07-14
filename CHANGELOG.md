@@ -14,6 +14,10 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 - Update check/download/install are now separate steps: an automatic startup check only detects availability (silently, with no error banner on failure), and downloading only starts when the user clicks the badge or the Settings button.
 
+### Fixed
+
+- Windows release builds were silently failing: the overlay's `beforeBuildCommand` used `mkdir -p`/`cp`/shell globs, none of which cmd.exe supports. Replaced with a cross-platform Node script, so Windows installers are now actually published (this had been broken since v0.1.0).
+
 ## [0.2.0] - 2026-07-14
 
 ### Added

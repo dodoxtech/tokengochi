@@ -5,7 +5,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --format=esm --outfile=../dashboard/static/overlay/overlay.js && cp index.html ../dashboard/static/overlay/index.html && mkdir -p ../dashboard/static/overlay/sprites ../dashboard/static/overlay/sprites/items && cp ../assets/sprites/hatchling/*.png ../assets/sprites/hatchling/*.json ../assets/sprites/effects/*.png ../assets/sprites/effects/*.json ../dashboard/static/overlay/sprites/ && cp ../assets/sprites/items/*.png ../dashboard/static/overlay/sprites/items/",
+    "build": "esbuild src/main.ts --bundle --format=esm --outfile=../dashboard/static/overlay/overlay.js && node scripts/copy-assets.mjs",
     "check": "tsc --noEmit"
   },
   "dependencies": {
