@@ -1,0 +1,50 @@
+id: hatchling-gag-expressions
+type: sprite
+subject: hatchling gag expression action pack
+description: >
+  A standalone Hatchling-style gag animation atlas containing sneeze, yawn,
+  dance, and drink-break body frames. This sheet is intentionally separate
+  from the base hatchling runtime sheet so the existing pet animation asset
+  remains unchanged.
+keywords: [pet, hatchling, gag, expression, sneeze, yawn, dance, drink-break, sprite]
+placement:
+  intended_use: optional gag animation atlas for the desktop pet overlay renderer
+  context: Canvas 2D sprite renderer at 4x nearest-neighbor scale
+  do: [load as a supplemental atlas, anchor at bottom center, mirror with Canvas for rightward movement]
+  dont: [do not overwrite ui/assets/sprites/hatchling/hatchling.png, do not non-integer scale, do not smooth]
+style:
+  profile: docs/assets/styles/style-profile-hatchling-gag-expressions.yaml
+  art_style: Sweetie 16 pixel art
+  outline: "1px #1a1c2c"
+  shading: flat two-tone, top-left light
+palette: ["#1a1c2c", "#5d275d", "#b13e53", "#ef7d57", "#ffcd75", "#a7f070", "#38b764", "#257179", "#29366f", "#3b5dc9", "#41a6f6", "#73eff7", "#f4f4f4", "#94b0c2", "#566c86", "#333c57"]
+background: chroma-keyed to transparent
+dimensions:
+  master: ui/assets/sprites/source/gag-expression-pack-master.png
+  output: 1472x552
+  aspect: "8:3 packed output"
+accessibility:
+  alt_text: "Animated yellow hatchling pixel-art gag expressions"
+animation:
+  sheet: ui/assets/sprites/hatchling/hatchling-gag-expressions.png
+  cell: { w: 184, h: 184 }
+  columns: 8
+  count: 20
+  fps: 10
+  loop: false
+  anchor: [0.5, 1.0]
+  clips: { sneeze: [0, 3], yawn: [4, 7], dance: [8, 13], drink-break: [14, 19] }
+files:
+  - path: ui/assets/sprites/hatchling/hatchling-gag-expressions.png
+    size: 1472x552
+    format: png
+    bytes: 43014
+  - path: ui/assets/sprites/hatchling/hatchling-gag-expressions.json
+    format: json-array
+    bytes: 4508
+source:
+  model: codex image generation
+  prompt: "Tokengochi Hatchling expanded gag expression pack, matching the existing hatchling sprite style, Sweetie 16 pixel art, chroma-magenta plate"
+  generated: 2026-07-13
+  master: ui/assets/sprites/source/gag-expression-pack-master.png
+  postprocess: ui/assets/sprites/scripts/generate-gag-expression-pack.mjs

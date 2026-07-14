@@ -16,7 +16,7 @@
     ownedItems: string[];
     equippedCosmetic?: string | null;
     equippedFoodSkin?: string | null;
-    furniture: { itemId: string; x: number }[];
+    furniture: { itemId: string; x: number; visible: boolean }[];
     albumRecords: {
       key: string;
       stage: string;
@@ -46,10 +46,11 @@
     waylandFallback: boolean;
     trackingPaused: boolean;
     calmMode: boolean;
+    agentStatusNotificationsEnabled: boolean;
   };
   type TokenTotals = { input: number; output: number; cacheRead: number; total: number };
   type FoodStats = { today: number; week: number };
-  type ShopItem = { id: string; label: string; kind: "Cosmetic" | "FoodSkin" | "Furniture" | "Heirloom"; priceSparks: number };
+  type ShopItem = { id: string; label: string; kind: "Cosmetic" | "FoodSkin" | "Furniture"; priceSparks: number };
   type DashboardState = {
     pet: PetState;
     settings: AppSettings;
@@ -75,6 +76,10 @@
   let updateStatus = $state<UpdateStatus>("idle");
   let updateVersion = $state("");
   let openaiApiKey = $state("");
+  type AgentStatusHookStatus = { installed: boolean; settingsPath: string };
+  let agentStatusHookStatus = $state<AgentStatusHookStatus | null>(null);
+  let agentStatusHookCheckError = $state("");
+  let agentStatusHookBusy = $state(false);
 
   function formatNumber(value: number): string {
     return Math.round(value).toLocaleString();
@@ -92,6 +97,28 @@
       selectedEgg = nextDashboard.settings.starterEgg;
     } catch (cause) {
       error = String(cause);
+    }
+    // Kept out of the Promise.all above: a malformed ~/.claude/settings.json
+    // should only degrade this one status readout, not the whole dashboard.
+    try {
+      agentStatusHookCheckError = "";
+      agentStatusHookStatus = await invoke<AgentStatusHookStatus>("agent_status_hook_status");
+    } catch (cause) {
+      agentStatusHookStatus = null;
+      agentStatusHookCheckError = String(cause);
+    }
+  }
+
+  async function installAgentStatusHooks() {
+    try {
+      agentStatusHookBusy = true;
+      agentStatusHookCheckError = "";
+      await invoke("install_agent_status_hooks");
+      agentStatusHookStatus = await invoke<AgentStatusHookStatus>("agent_status_hook_status");
+    } catch (cause) {
+      agentStatusHookCheckError = String(cause);
+    } finally {
+      agentStatusHookBusy = false;
     }
   }
 
@@ -209,6 +236,10 @@
     return dashboard?.pet.furniture.find((item) => item.itemId === itemId)?.x ?? 0.5;
   }
 
+  function furnitureVisible(itemId: string): boolean {
+    return dashboard?.pet.furniture.find((item) => item.itemId === itemId)?.visible ?? true;
+  }
+
   onMount(() => {
     void refresh();
     const unlisten = listen<boolean>("tracking_changed", (event) => {
@@ -323,11 +354,6 @@
             <h2>Sparks sinks</h2>
           </div>
           <span>{dashboard.pet.ownedItems.length} owned</span>
-          {#if import.meta.env.DEV}
-            <button class="ghost" onclick={() => applyPetCommand("debug_add_sparks", { amount: 100 })}>
-              Debug: +100 Sparks
-            </button>
-          {/if}
         </div>
         <div class="shop-grid">
           {#each dashboard.shopCatalog as item}
@@ -339,9 +365,9 @@
               <strong>{item.label}</strong>
               <small>{item.priceSparks} Sparks</small>
               {#if owns(item)}
-                {#if item.kind === "Cosmetic" || item.kind === "FoodSkin" || item.kind === "Heirloom"}
+                {#if item.kind === "Cosmetic" || item.kind === "FoodSkin"}
                   <button class="ghost" onclick={() => applyPetCommand("equip_shop_item", { itemId: item.id })}>
-                    {dashboard.pet.equippedCosmetic === item.id || dashboard.pet.equippedFoodSkin === item.id ? "Equipped" : "Equip"}
+                    {dashboard.pet.equippedCosmetic === item.id || dashboard.pet.equippedFoodSkin === item.id ? "Unequip" : "Equip"}
                   </button>
                 {:else}
                   <label class="mini-field">
@@ -358,11 +384,14 @@
                         })}
                     />
                   </label>
+                  <button class="ghost" onclick={() => applyPetCommand("toggle_furniture_visibility", { itemId: item.id })}>
+                    {furnitureVisible(item.id) ? "Hide" : "Show"}
+                  </button>
                 {/if}
               {:else}
                 <button
                   class="primary"
-                  disabled={dashboard.pet.sparks < item.priceSparks || item.kind === "Heirloom"}
+                  disabled={dashboard.pet.sparks < item.priceSparks}
                   onclick={() => applyPetCommand("buy_shop_item", { itemId: item.id })}
                 >
                   Buy
@@ -477,6 +506,49 @@
           />
           <span>Calm mode (disable climbing &amp; idle gags)</span>
         </label>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={dashboard.settings.agentStatusNotificationsEnabled}
+            onchange={() =>
+              patchSettings({
+                agentStatusNotificationsEnabled: !dashboard?.settings.agentStatusNotificationsEnabled,
+              })}
+          />
+          <span>Pet reacts to Claude status (done / needs approval)</span>
+        </label>
+        <div class="field agent-status-hook">
+          <span class="label-with-hint">
+            Claude Code hook
+            <button type="button" class="info-hint" aria-label="What does the Claude Code hook do?">
+              <span aria-hidden="true">?</span>
+              <span class="tooltip-text" role="tooltip">
+                Adds a `Stop`/`Notification` hook to your global
+                <code>~/.claude/settings.json</code> so Claude Code tells Tokengochi
+                when a turn finishes or needs your approval - that's what powers the
+                "Pet reacts to Claude status" toggle above. Only a session id is
+                read from the hook payload; no prompt or file content ever leaves
+                your machine. Safe to install more than once (it won't duplicate
+                itself) and never touches your other hooks.
+              </span>
+            </button>
+          </span>
+          {#if agentStatusHookStatus?.installed}
+            <span class="hook-status hook-status-ok">Installed in {agentStatusHookStatus.settingsPath}</span>
+          {:else}
+            <span class="hook-status">
+              Not installed - the pet can't react to Claude turns until this is set up globally.
+            </span>
+            <div class="button-row">
+              <button class="primary" disabled={agentStatusHookBusy} onclick={installAgentStatusHooks}>
+                {agentStatusHookBusy ? "Installing…" : "Install hook"}
+              </button>
+            </div>
+          {/if}
+          {#if agentStatusHookCheckError}
+            <small class="error">{agentStatusHookCheckError}</small>
+          {/if}
+        </div>
 
         <label class="field">
           <span>Pet size</span>
@@ -788,6 +860,75 @@
   .update-status {
     color: #aebbd1;
     font-size: 14px;
+  }
+  .agent-status-hook {
+    grid-template-columns: 120px 1fr auto;
+  }
+  .hook-status {
+    color: #aebbd1;
+    font-size: 14px;
+  }
+  .hook-status-ok {
+    color: #a7f070;
+  }
+  .agent-status-hook small.error {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+  .label-with-hint {
+    align-items: center;
+    display: inline-flex;
+    gap: 6px;
+  }
+  .info-hint {
+    background: none;
+    border: 0;
+    color: #aebbd1;
+    cursor: help;
+    display: inline-flex;
+    padding: 0;
+    position: relative;
+  }
+  .info-hint > span[aria-hidden] {
+    align-items: center;
+    background: #223049;
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 11px;
+    font-weight: 800;
+    height: 15px;
+    justify-content: center;
+    width: 15px;
+  }
+  .info-hint .tooltip-text {
+    background: #0d1320;
+    border: 1px solid #2a3851;
+    border-radius: 8px;
+    bottom: calc(100% + 8px);
+    color: #f5f7ff;
+    font-size: 12px;
+    font-weight: 400;
+    left: 0;
+    line-height: 1.5;
+    opacity: 0;
+    padding: 10px 12px;
+    pointer-events: none;
+    position: absolute;
+    transition: opacity 0.12s ease;
+    visibility: hidden;
+    width: 260px;
+    z-index: 5;
+  }
+  .info-hint .tooltip-text code {
+    background: #1a2334;
+    border-radius: 4px;
+    padding: 1px 4px;
+  }
+  .info-hint:hover .tooltip-text,
+  .info-hint:focus-visible .tooltip-text,
+  .info-hint:focus .tooltip-text {
+    opacity: 1;
+    visibility: visible;
   }
   input,
   select {

@@ -1,0 +1,38 @@
+id: prop-drink-bottle
+type: sprite
+subject: floating drink bottle prop
+description: >
+  A tiny rounded blue bottle/canteen with a dark cap, pale highlight, and
+  dark pixel outline. It appears beside the hatchling pet's mouth during the
+  drink-break gag instead of being held by arms.
+keywords: [drink, bottle, canteen, prop, gag, sprite]
+placement:
+  intended_use: drink-break gag prop beside the pet mouth
+  context: Tokengochi overlay renderer, drawn near the hatchling during gag animation
+  do: [draw at native pixel size or integer scale, preserve transparent alpha, keep beside mouth rather than in hand]
+  dont: [do not bake into the body sheet, do not add arms, do not bilinear scale]
+style:
+  profile: docs/assets/styles/style-profile-prop-drink-bottle.yaml
+  art_style: Sweetie 16 pixel art
+  stroke: 1px native pixel outline
+  shading: flat two-tone
+palette: ["#1a1c2c", "#5d275d", "#257179", "#3b5dc9", "#41a6f6", "#73eff7", "#f4f4f4", "#94b0c2"]
+background: transparent
+dimensions:
+  master: ui/assets/sprites/source/gag-expression-pack-master.png
+  output: 16x16
+  aspect: "1:1"
+safe_area: inner padded cell
+accessibility:
+  alt_text: "Tiny blue drink bottle pixel-art prop"
+files:
+  - path: ui/assets/sprites/items/prop-drink-bottle-sprite-16x16.png
+    size: 16x16
+    format: png
+    bytes: 209
+source:
+  model: codex image generation
+  prompt: "Tokengochi Hatchling expanded gag expression pack, Sweetie 16 pixel art, standalone blue drink bottle prop, chroma-magenta plate"
+  generated: 2026-07-13
+  master: ui/assets/sprites/source/gag-expression-pack-master.png
+  postprocess: ui/assets/sprites/scripts/generate-gag-expression-pack.mjs

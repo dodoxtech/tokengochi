@@ -35,3 +35,7 @@ See [[pet-action-pack-spec|Pet Action Pack Spec]] before adding a new pet
 form or a new gag/expression — it defines the fixed tag set a pet form
 must ship to be a drop-in character swap with zero code changes.
 
+See [[agent-status-notifications|Agent Status Notifications]] before touching
+the Claude Code hook bridge or the pet's turn-completed/needs-approval badge
+— it documents the local file bridge and the hook JSON to install.
+

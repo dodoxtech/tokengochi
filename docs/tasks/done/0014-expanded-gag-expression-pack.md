@@ -1,6 +1,6 @@
 ---
 type: task
-status: backlog
+status: done
 priority: P2
 delivery_order: 0014
 estimate: 3d
@@ -10,7 +10,7 @@ owner: AI agent
 sprint: null
 tags:
   - task
-  - backlog
+  - done
   - art
 ---
 
@@ -18,7 +18,7 @@ tags:
 
 ## Status
 
-- State: backlog
+- State: done
 - Created: 2026-07-13
 - Owner: AI agent
 - Priority: P2
@@ -47,6 +47,11 @@ No code changes are in scope for this task — see
 wiring a future implementation task will need (new `GAG_VARIANTS` entries,
 `MODE_ANIMATION_TAG`/`drawGagEffect` branches, optional new effect tags,
 optional new item sprite).
+
+Design decision: `drink-break` keeps the Hatchling's task-0005 no-arms
+silhouette. The drink prop floats/pops beside the mouth rather than being
+held by newly added arms, so the gag fits the current pet style and does
+not create a character-design exception.
 
 Related:
 
@@ -144,11 +149,11 @@ pair, anchored above the head the same way `heart` anchors for `petted`.
 
 ### 4. `drink-break` (new gag variant, prop-dependent)
 
-**Resolve the no-arms question first** (see Scope) — recommended default
-if no stronger option emerges during review: the bottle appears to float
-into frame beside the pet's mouth rather than being visibly "held," since
-the character has no arms to grip it. This avoids a body-design change
-just for one gag.
+The no-arms question is resolved for this gag: the bottle appears to float
+or pop into frame beside the pet's mouth rather than being visibly "held,"
+since the Hatchling has no arms to grip it. This avoids a body-design
+change just for one gag and matches the playful desktop-pet read of small
+objects being summoned near the character.
 
 6 frames, 120 ms each, once, returns to `idle`:
 
@@ -170,16 +175,16 @@ not baked into the pet body sheet or the effects sheet.
 
 ## Acceptance Criteria
 
-- [ ] `docs/knowledge/pet-action-pack-spec.md`'s gag-tag section lists
+- [x] `docs/knowledge/pet-action-pack-spec.md`'s gag-tag section lists
       `sneeze`, `yawn`, `dance`, `drink-break` as required tags with a
       pointer to this task's frame tables.
-- [ ] The no-arms/prop-handling question for `drink-break` has a recorded
+- [x] The no-arms/prop-handling question for `drink-break` has a recorded
       decision (either here or as a new ADR if it turns out to affect the
       character design beyond this one gag).
-- [ ] Each of the 4 gags above has a complete frame table (pose, duration,
+- [x] Each of the 4 gags above has a complete frame table (pose, duration,
       loop behavior) precise enough to hand to an artist or an image-model
       prompt without follow-up questions.
-- [ ] New effect tags (`notes`) and the new prop sprite (`prop-drink-bottle`)
+- [x] New effect tags (`notes`) and the new prop sprite (`prop-drink-bottle`)
       are specified with palette/size, matching the existing effects-sheet
       (16×16) and item-sprite conventions respectively.
 
@@ -201,12 +206,19 @@ not baked into the pet body sheet or the effects sheet.
 
 ## Implementation Notes
 
-- TBD — filled in by the follow-up implementation task once this spec is
-  approved. That task will need: `GAG_VARIANTS` additions in
-  `constants.ts`, new `drawGagEffect()` branches in `render.ts` for
-  `notes`/prop rendering, and the actual sheet/JSON/aseprite generation
-  (see [[../../knowledge/sprite-asset-pipeline|Sprite Asset Pipeline]] for
-  the script pattern to follow).
+- Updated [[../../knowledge/pet-action-pack-spec|Pet Action Pack Spec]] so
+  the gag-tag table now includes the four required authored tags:
+  `sneeze`, `yawn`, `dance`, and `drink-break`.
+- Registered new shared effect tag `notes`: 2 frames, 200 ms each, looped,
+  anchored above the pet like `heart`.
+- Registered shared prop sprite `prop-drink-bottle`: 16×16, Sweetie-16,
+  `#1a1c2c` outline/cap, `#41a6f6` blue bottle body or `#38b764` green
+  canteen body, `#f4f4f4` highlight.
+- Follow-up implementation task will need: `GAG_VARIANTS` additions in
+  `constants.ts`, new `MODE_ANIMATION_TAG` entries in `atlas.ts`, new
+  `drawGagEffect()`/prop branches in `render.ts`, sheet/JSON/source asset
+  generation, and descriptor/style sidecars for any new prop artwork (see
+  [[../../knowledge/sprite-asset-pipeline|Sprite Asset Pipeline]]).
 
 ## References
 
@@ -219,19 +231,31 @@ not baked into the pet body sheet or the effects sheet.
 
 ## Verification Plan
 
-- [ ] Doc review: frame tables are unambiguous enough to hand off without
+- [x] Doc review: frame tables are unambiguous enough to hand off without
       the reviewer needing to ask clarifying questions.
-- [ ] Cross-check against `docs/tasks/active/0005-sprite-renderer-behavior-ai.md`'s
+- [x] Cross-check against `docs/tasks/active/0005-sprite-renderer-behavior-ai.md`'s
       Art Style Guide for palette/canvas/outline consistency.
 
 ## Verification Results
 
-TBD
+- 2026-07-13: Cross-checked frame specs against task 0005's Hatchling art
+  style: 32×32 pet frames, left-facing, Sweetie-16-only, 1px `#1a1c2c`
+  outline, binary alpha, flat two-tone shading, top-left light, chunky
+  1×-legible silhouette, and no arms.
+- 2026-07-13: Confirmed `notes` and `prop-drink-bottle` specs match the
+  existing shared-effect/item split: effects are 16×16 and shared across
+  forms; props live under `ui/assets/sprites/items/` and are not baked
+  into the body sheet.
+- 2026-07-13: No code or PNG generation was run because implementation and
+  asset production are explicitly out of scope for task 0014.
 
 ## Completion Notes
 
-Fill this in before moving the task to `docs/tasks/done/`.
-
-- Completed: YYYY-MM-DD
+- Completed: 2026-07-13
 - Changed files:
+  - `docs/knowledge/pet-action-pack-spec.md`
+  - `docs/tasks/done/0014-expanded-gag-expression-pack.md`
 - Follow-ups:
+  - [[../active/0016-implement-expanded-gag-expression-pack|0016]]:
+    generate the body/effect/prop assets and wire `GAG_VARIANTS`,
+    animation tags, and render branches.

@@ -205,15 +205,37 @@ impl EconomyState {
 
         match item.kind {
             ShopItemKind::Cosmetic => {
-                self.equipped_cosmetic = Some(item.id.to_string());
+                self.equipped_cosmetic = if self.equipped_cosmetic.as_deref() == Some(item.id) {
+                    None
+                } else {
+                    Some(item.id.to_string())
+                };
                 Ok(())
             }
             ShopItemKind::FoodSkin => {
-                self.equipped_food_skin = Some(item.id.to_string());
+                self.equipped_food_skin = if self.equipped_food_skin.as_deref() == Some(item.id) {
+                    None
+                } else {
+                    Some(item.id.to_string())
+                };
                 Ok(())
             }
             ShopItemKind::Furniture => Err(ShopError::WrongItemKind),
         }
+    }
+
+    pub fn toggle_furniture_visibility(&mut self, item_id: &str) -> Result<(), ShopError> {
+        let item = shop_item(item_id).ok_or(ShopError::UnknownItem)?;
+        if item.kind != ShopItemKind::Furniture {
+            return Err(ShopError::WrongItemKind);
+        }
+        let placement = self
+            .furniture
+            .iter_mut()
+            .find(|placement| placement.item_id == item.id)
+            .ok_or(ShopError::NotOwned)?;
+        placement.visible = !placement.visible;
+        Ok(())
     }
 
     pub fn place_furniture(&mut self, item_id: &str, x: f64) -> Result<(), ShopError> {
@@ -234,6 +256,7 @@ impl EconomyState {
             self.furniture.push(FurniturePlacement {
                 item_id: item.id.to_string(),
                 x: x.clamp(0.05, 0.95),
+                visible: true,
             });
         }
         Ok(())
@@ -255,14 +278,6 @@ impl EconomyState {
         *self = Self::new(today, self.last_reconciled_unix);
         self.sparks = retained_sparks;
         self.owned_items = retained_owned_items;
-        if !self
-            .owned_items
-            .iter()
-            .any(|owned| owned == "halo-heirloom")
-        {
-            self.owned_items.push("halo-heirloom".to_string());
-        }
-        self.equipped_cosmetic = Some("halo-heirloom".to_string());
         self.furniture = retained_furniture;
         self.album = retained_album;
         self.album_records = retained_album_records;
@@ -890,6 +905,61 @@ mod tests {
     }
 
     #[test]
+    fn equipping_an_already_equipped_item_toggles_it_off() {
+        let mut state = EconomyState::new(day(2026, 1, 1), 0);
+        state.sparks = 40;
+        state.buy_item("hat-leaf").unwrap();
+        state.buy_item("food-sushi").unwrap();
+
+        state.equip_item("hat-leaf").unwrap();
+        state.equip_item("food-sushi").unwrap();
+        assert_eq!(state.equipped_cosmetic.as_deref(), Some("hat-leaf"));
+        assert_eq!(state.equipped_food_skin.as_deref(), Some("food-sushi"));
+
+        state.equip_item("hat-leaf").unwrap();
+        state.equip_item("food-sushi").unwrap();
+        assert_eq!(state.equipped_cosmetic, None);
+        assert_eq!(state.equipped_food_skin, None);
+
+        state.equip_item("hat-leaf").unwrap();
+        assert_eq!(state.equipped_cosmetic.as_deref(), Some("hat-leaf"));
+    }
+
+    #[test]
+    fn toggling_furniture_visibility_flips_placement_without_losing_position() {
+        let mut state = EconomyState::new(day(2026, 1, 1), 0);
+        state.sparks = 40;
+        state.buy_item("furniture-bed").unwrap();
+        state.place_furniture("furniture-bed", 0.9).unwrap();
+
+        state.toggle_furniture_visibility("furniture-bed").unwrap();
+        let placement = state
+            .furniture
+            .iter()
+            .find(|item| item.item_id == "furniture-bed")
+            .unwrap();
+        assert!(!placement.visible);
+        assert_eq!(placement.x, 0.9);
+
+        state.toggle_furniture_visibility("furniture-bed").unwrap();
+        let placement = state
+            .furniture
+            .iter()
+            .find(|item| item.item_id == "furniture-bed")
+            .unwrap();
+        assert!(placement.visible);
+
+        assert_eq!(
+            state.toggle_furniture_visibility("hat-leaf"),
+            Err(ShopError::WrongItemKind)
+        );
+        assert_eq!(
+            state.toggle_furniture_visibility("furniture-plant"),
+            Err(ShopError::NotOwned)
+        );
+    }
+
+    #[test]
     fn prestige_requires_elder_resets_pet_and_preserves_album_legacy() {
         let mut state = EconomyState::new(day(2026, 1, 1), 0);
         state.sparks = 25;
@@ -906,8 +976,6 @@ mod tests {
         assert_eq!(state.sparks, 25);
         assert_eq!(state.prestige_count, 1);
         assert_eq!(state.xp_bonus_multiplier, 1.1);
-        assert!(state.owned_items.contains(&"halo-heirloom".to_string()));
-        assert_eq!(state.equipped_cosmetic.as_deref(), Some("halo-heirloom"));
         assert!(state.album_records.len() > album_before.len());
         assert!(state
             .album_records

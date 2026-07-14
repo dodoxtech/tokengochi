@@ -38,6 +38,17 @@ tooling, kept next to the sprite assets they produce rather than under
 - **`scripts/generate-hat-mushroom-from-master.mjs`** — same pattern as
   above but for the single-item `source/hat-mushroom-master.png` master
   (Mushroom Cap hat).
+- **`scripts/generate-food-default-from-master.mjs`** — rebuilds the
+  default unequipped food drop sprite
+  `items/food-default-sprite-32x32.png` from
+  `source/food-default-master.png`. The renderer uses this before falling
+  back to the old procedural default food drawing.
+- **`scripts/generate-gag-expression-pack.mjs`** — builds the task 0016
+  gag expansion from `source/gag-expression-pack-master.png` as standalone
+  supplemental files: `hatchling/hatchling-gag-expressions.png`/`.json`,
+  `effects/effects-notes.png`/`.json`, and the 16×16
+  `items/prop-drink-bottle-sprite-16x16.png`. It deliberately does not
+  overwrite the base `hatchling.png` or `effects.png` runtime sheets.
 
 Run any of them with plain `node`, e.g.:
 

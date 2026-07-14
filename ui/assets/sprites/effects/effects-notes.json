@@ -1,0 +1,43 @@
+{
+  "frames": [
+    {
+      "filename": "effects-notes 0.aseprite",
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 88,
+        "h": 88
+      },
+      "duration": 200
+    },
+    {
+      "filename": "effects-notes 1.aseprite",
+      "frame": {
+        "x": 88,
+        "y": 0,
+        "w": 88,
+        "h": 88
+      },
+      "duration": 200
+    }
+  ],
+  "meta": {
+    "app": "Tokengochi image-model pipeline",
+    "version": "1.0",
+    "image": "effects-notes.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 176,
+      "h": 88
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "notes",
+        "from": 0,
+        "to": 1,
+        "direction": "forward"
+      }
+    ]
+  }
+}

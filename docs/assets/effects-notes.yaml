@@ -1,0 +1,50 @@
+id: effects-notes
+type: sprite
+subject: music-note overlay effect
+description: >
+  A standalone two-frame Sweetie 16 music-note overlay effect for the
+  Hatchling dance gag. This sheet is intentionally separate from the base
+  effects atlas so the existing zzz, heart, exclaim, and dust frames remain
+  unchanged.
+keywords: [effects, notes, music, dance, sprite, overlay]
+placement:
+  intended_use: feedback overlay above the pet during the dance gag
+  context: Canvas 2D overlay at 4x nearest-neighbor scale
+  do: [anchor above the hatchling like heart, preserve native pixels]
+  dont: [do not overwrite ui/assets/sprites/effects/effects.png, do not smooth]
+style:
+  profile: docs/assets/styles/style-profile-effects-notes.yaml
+  art_style: Sweetie 16 pixel art
+  outline: "1px #1a1c2c"
+  shading: flat two-tone, top-left light
+palette: ["#1a1c2c", "#5d275d", "#b13e53", "#ef7d57", "#ffcd75", "#a7f070", "#257179", "#29366f", "#3b5dc9", "#41a6f6", "#73eff7", "#f4f4f4", "#94b0c2", "#566c86", "#333c57"]
+background: chroma-keyed to transparent
+dimensions:
+  master: ui/assets/sprites/source/gag-expression-pack-master.png
+  output: 176x88
+  aspect: "2:1 packed output"
+accessibility:
+  alt_text: "Pixel-art music-note dance effect"
+animation:
+  sheet: ui/assets/sprites/effects/effects-notes.png
+  cell: { w: 88, h: 88 }
+  columns: 2
+  count: 2
+  fps: 5
+  loop: true
+  anchor: [0.5, 1.0]
+  clips: { notes: [0, 1] }
+files:
+  - path: ui/assets/sprites/effects/effects-notes.png
+    size: 176x88
+    format: png
+    bytes: 1591
+  - path: ui/assets/sprites/effects/effects-notes.json
+    format: json-array
+    bytes: 713
+source:
+  model: codex image generation
+  prompt: "Tokengochi Hatchling expanded gag expression pack, Sweetie 16 pixel music-note effect, chroma-magenta plate"
+  generated: 2026-07-13
+  master: ui/assets/sprites/source/gag-expression-pack-master.png
+  postprocess: ui/assets/sprites/scripts/generate-gag-expression-pack.mjs

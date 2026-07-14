@@ -1,0 +1,241 @@
+{
+  "frames": [
+    {
+      "filename": "hatchling-gag-expressions 0.aseprite",
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 120
+    },
+    {
+      "filename": "hatchling-gag-expressions 1.aseprite",
+      "frame": {
+        "x": 184,
+        "y": 0,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 90
+    },
+    {
+      "filename": "hatchling-gag-expressions 2.aseprite",
+      "frame": {
+        "x": 368,
+        "y": 0,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 80
+    },
+    {
+      "filename": "hatchling-gag-expressions 3.aseprite",
+      "frame": {
+        "x": 552,
+        "y": 0,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 150
+    },
+    {
+      "filename": "hatchling-gag-expressions 4.aseprite",
+      "frame": {
+        "x": 736,
+        "y": 0,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 150
+    },
+    {
+      "filename": "hatchling-gag-expressions 5.aseprite",
+      "frame": {
+        "x": 920,
+        "y": 0,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 250
+    },
+    {
+      "filename": "hatchling-gag-expressions 6.aseprite",
+      "frame": {
+        "x": 1104,
+        "y": 0,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 200
+    },
+    {
+      "filename": "hatchling-gag-expressions 7.aseprite",
+      "frame": {
+        "x": 1288,
+        "y": 0,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 200
+    },
+    {
+      "filename": "hatchling-gag-expressions 8.aseprite",
+      "frame": {
+        "x": 0,
+        "y": 184,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 110
+    },
+    {
+      "filename": "hatchling-gag-expressions 9.aseprite",
+      "frame": {
+        "x": 184,
+        "y": 184,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 110
+    },
+    {
+      "filename": "hatchling-gag-expressions 10.aseprite",
+      "frame": {
+        "x": 368,
+        "y": 184,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 110
+    },
+    {
+      "filename": "hatchling-gag-expressions 11.aseprite",
+      "frame": {
+        "x": 552,
+        "y": 184,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 110
+    },
+    {
+      "filename": "hatchling-gag-expressions 12.aseprite",
+      "frame": {
+        "x": 736,
+        "y": 184,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 110
+    },
+    {
+      "filename": "hatchling-gag-expressions 13.aseprite",
+      "frame": {
+        "x": 920,
+        "y": 184,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 110
+    },
+    {
+      "filename": "hatchling-gag-expressions 14.aseprite",
+      "frame": {
+        "x": 1104,
+        "y": 184,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 120
+    },
+    {
+      "filename": "hatchling-gag-expressions 15.aseprite",
+      "frame": {
+        "x": 1288,
+        "y": 184,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 120
+    },
+    {
+      "filename": "hatchling-gag-expressions 16.aseprite",
+      "frame": {
+        "x": 0,
+        "y": 368,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 130
+    },
+    {
+      "filename": "hatchling-gag-expressions 17.aseprite",
+      "frame": {
+        "x": 184,
+        "y": 368,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 130
+    },
+    {
+      "filename": "hatchling-gag-expressions 18.aseprite",
+      "frame": {
+        "x": 368,
+        "y": 368,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 110
+    },
+    {
+      "filename": "hatchling-gag-expressions 19.aseprite",
+      "frame": {
+        "x": 552,
+        "y": 368,
+        "w": 184,
+        "h": 184
+      },
+      "duration": 110
+    }
+  ],
+  "meta": {
+    "app": "Tokengochi image-model pipeline",
+    "version": "1.0",
+    "image": "hatchling-gag-expressions.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1472,
+      "h": 552
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "sneeze",
+        "from": 0,
+        "to": 3,
+        "direction": "forward"
+      },
+      {
+        "name": "yawn",
+        "from": 4,
+        "to": 7,
+        "direction": "forward"
+      },
+      {
+        "name": "dance",
+        "from": 8,
+        "to": 13,
+        "direction": "forward"
+      },
+      {
+        "name": "drink-break",
+        "from": 14,
+        "to": 19,
+        "direction": "forward"
+      }
+    ]
+  }
+}

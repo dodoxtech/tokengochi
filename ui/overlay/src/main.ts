@@ -24,18 +24,29 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { appWindow } from "./dom";
-import { ACTIVE_TICK_MS, HOVER_POLL_MS, IDLE_TICK_MS, LANDING_PAUSE_MS } from "./constants";
-import { updateFood, updatePet } from "./behavior";
+import {
+  ACTIVE_TICK_MS,
+  AGENT_STATUS_COMPLETED_BADGE_MS,
+  AGENT_STATUS_NEEDS_APPROVAL_TIMEOUT_MS,
+  HOVER_POLL_MS,
+  IDLE_TICK_MS,
+  LANDING_PAUSE_MS,
+  MAX_FRAME_DT_MS,
+} from "./constants";
+import { updateAgentStatusBadge, updateFood, updatePet } from "./behavior";
 import { draw } from "./render";
 import { initInput, pollCursorForHover } from "./input";
 import {
+  agentStatusBadge,
   applyOverlaySettings,
+  clearAgentStatusBadge,
   ensurePendingFoodVisible,
   foods,
   groundY,
   pet,
   pruneEatenFood,
   resizeCanvas,
+  setAgentStatusBadge,
   setState,
   setWindowSegments,
   spawnFood,
@@ -43,7 +54,13 @@ import {
   windowOffsetX,
   windowOffsetY,
 } from "./state";
-import type { FoodSpawnedPayload, OverlaySettingsPayload, PetStatePayload, WindowSegmentPayload } from "./types";
+import type {
+  AgentStatusPayload,
+  FoodSpawnedPayload,
+  OverlaySettingsPayload,
+  PetStatePayload,
+  WindowSegmentPayload,
+} from "./types";
 
 let lastTick = performance.now();
 
@@ -53,16 +70,29 @@ function tick(now: number): void {
     pet.mode === "tumble" ||
     pet.mode === "climb" ||
     pet.mode === "sulk" ||
-    now - pet.landedAt < 300;
+    now - pet.landedAt < LANDING_PAUSE_MS;
   const active =
-    physicallyActive || pet.mode === "seek" || pet.mode === "eat" || foods.some((food) => !food.eaten);
+    physicallyActive ||
+    pet.mode === "seek" ||
+    pet.mode === "eat" ||
+    foods.some((food) => !food.eaten) ||
+    agentStatusBadge.status === "needs_approval"; // keep the attention bob smooth
   const tickInterval = active ? ACTIVE_TICK_MS : IDLE_TICK_MS;
 
   if (now - lastTick >= tickInterval) {
-    const dtMs = now - lastTick;
+    // Cap the frame delta: a stall in the render loop (tab backgrounded,
+    // OS/IPC hiccup right around a drag-release) would otherwise hand a
+    // single tick a huge `dtMs`, and every per-tick movement formula here
+    // (walk-speed steps, tumble physics) scales with it - a large enough
+    // dtMs lets the pet cover its *entire* remaining distance to a target
+    // (e.g. the bed) in one frame, reading as an instant teleport right on
+    // landing instead of a walk, even though the landing-pause gate itself
+    // (wall-clock `now < overrideUntil`) was technically still honored.
+    const dtMs = Math.min(now - lastTick, MAX_FRAME_DT_MS);
     lastTick = now;
     updateFood(dtMs, now);
     updatePet(dtMs, now);
+    updateAgentStatusBadge(now);
     pruneEatenFood();
     draw(now);
   }
@@ -96,6 +126,26 @@ void listen<WindowSegmentPayload[]>("window_segments_changed", (event) => {
       y: segment.y - windowOffsetY,
     })),
   );
+});
+
+// Task 0017 (extended 2026-07-14): a "completed" event always wins
+// immediately (short celebration, also clears any stale "needs_approval" -
+// the turn presumably resolved it). A "needs_approval" event doesn't clobber
+// an existing badge of the same status; it just refreshes the safety-net
+// timeout. A "resolved" event (PostToolUse/PermissionDenied - the prompt got
+// approved+ran, or denied) silently clears a pending "needs_approval" badge
+// without waiting for the whole turn to end via "completed"; it never sets a
+// badge of its own, so it can't interrupt an in-progress "completed"
+// celebration or fire spuriously when nothing was pending.
+void listen<AgentStatusPayload>("agent_status_changed", (event) => {
+  const now = performance.now();
+  if (event.payload.status === "completed") {
+    setAgentStatusBadge("completed", now + AGENT_STATUS_COMPLETED_BADGE_MS);
+  } else if (event.payload.status === "needs_approval") {
+    setAgentStatusBadge("needs_approval", now + AGENT_STATUS_NEEDS_APPROVAL_TIMEOUT_MS);
+  } else if (agentStatusBadge.status === "needs_approval") {
+    clearAgentStatusBadge();
+  }
 });
 
 resizeCanvas();

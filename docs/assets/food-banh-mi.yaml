@@ -27,7 +27,7 @@ files:
   - path: ui/assets/sprites/items/food-banh-mi-sprite-32x32.png
     size: 32x32
     format: png
-    bytes: 386
+    bytes: 378
 source:
   model: codex image generation
   prompt: "Tokengochi Sparks sink item sprite, banh mi food skin, Sweetie 16 pixel art, chroma-magenta plate"

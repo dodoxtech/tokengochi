@@ -128,6 +128,12 @@ pub struct ShopItem {
 pub struct FurniturePlacement {
     pub item_id: String,
     pub x: f64,
+    #[serde(default = "default_furniture_visible")]
+    pub visible: bool,
+}
+
+fn default_furniture_visible() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

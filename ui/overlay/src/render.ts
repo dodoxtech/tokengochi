@@ -2,19 +2,22 @@
 // main.ts for the module overview.
 
 import { ctx } from "./dom";
-import { effectsAtlas, frameForTag, hatchlingAtlas, MODE_ANIMATION_TAG } from "./atlas";
+import { effectsAtlas, frameForTag, hatchlingAtlas, MODE_ANIMATION_TAG, notesAtlas, resolveGagBody } from "./atlas";
+import type { SpriteAtlas } from "./atlas";
 import { FOOD_BOUNCE_MS } from "./constants";
-import { PET_SIZE, clamp, foods, furnitureX, groundY, hover, pet, state } from "./state";
+import { PET_SIZE, agentStatusBadge, clamp, foods, furnitureX, groundY, hover, pet, state } from "./state";
 let animMode: string | null = null;
 let animStartedAt = 0;
 
 const ITEM_SPRITE_PATHS: Record<string, string> = {
   "hat-leaf": "./sprites/items/hat-leaf-sprite-32x32.png",
   "hat-mushroom": "./sprites/items/hat-mushroom-sprite-32x32.png",
+  "food-default": "./sprites/items/food-default-sprite-32x32.png",
   "food-sushi": "./sprites/items/food-sushi-sprite-32x32.png",
   "food-banh-mi": "./sprites/items/food-banh-mi-sprite-32x32.png",
   "furniture-bed": "./sprites/items/furniture-bed-sprite-80x40.png",
   "furniture-plant": "./sprites/items/furniture-plant-sprite-80x40.png",
+  "prop-drink-bottle": "./sprites/items/prop-drink-bottle-sprite-16x16.png",
 };
 
 const itemSprites = Object.fromEntries(
@@ -64,8 +67,16 @@ function drawPet(now: number): void {
     animMode = animKey;
     animStartedAt = now;
   }
-  const tag = isSitting ? MODE_ANIMATION_TAG.idle : MODE_ANIMATION_TAG[pet.mode];
-  const frame = frameForTag(hatchlingAtlas, tag, now - animStartedAt);
+  // `gag` picks its body atlas/tag per `pet.gagVariant` (task 0016's
+  // supplemental hatchling-gag-expressions atlas for the authored variants,
+  // the base atlas's `idle` tag for the still-procedural ones) rather than
+  // through the generic mode->tag table other modes use.
+  const bodySource =
+    pet.mode === "gag" && !isSitting
+      ? resolveGagBody(pet.gagVariant)
+      : { atlas: hatchlingAtlas, tag: isSitting ? MODE_ANIMATION_TAG.idle : MODE_ANIMATION_TAG[pet.mode] };
+  const bodyAtlas = bodySource.atlas;
+  const frame = frameForTag(bodyAtlas, bodySource.tag, now - animStartedAt);
 
   ctx.save();
   ctx.translate(x + PET_SIZE / 2, y + PET_SIZE / 2);
@@ -82,7 +93,7 @@ function drawPet(now: number): void {
 
   if (frame) {
     ctx.drawImage(
-      hatchlingAtlas!.image,
+      bodyAtlas!.image,
       frame.x,
       frame.y,
       frame.w,
@@ -101,7 +112,7 @@ function drawPet(now: number): void {
     drawSpiralEyes(now);
   }
 
-  drawCosmetic(now);
+  drawCosmetic();
 
   ctx.restore();
 
@@ -128,6 +139,22 @@ function drawSpiralEyes(now: number): void {
   }
 }
 
+/** Only these `equippedCosmetic` values are headwear (hats) sitting just
+ * above the head - `scarf-sunset` shares the same cosmetic slot but sits at
+ * the neck, so it must not trigger hat clearance below. */
+const HEADWEAR_COSMETICS = new Set(["hat-leaf", "hat-mushroom"]);
+
+/** Bubbles/badges that anchor above the head clip through a worn hat's brim
+ * at their plain baseline offset, so they need a bit more clearance when
+ * headwear is equipped - and, symmetrically, read better sitting closer to
+ * the head (not floating) when the pet's bare-headed. */
+const HAT_CLEARANCE_PX = 20;
+
+function aboveHeadY(baseY: number): number {
+  const wearingHat = !!state.equippedCosmetic && HEADWEAR_COSMETICS.has(state.equippedCosmetic);
+  return wearingHat ? baseY : baseY + HAT_CLEARANCE_PX;
+}
+
 /** Effects drawn outside the pet's own rotate/scale transform, from the
  * effects atlas (`ui/assets/sprites/effects`): hearts, exclaim bubble, zzz,
  * landing/gag dust. `gagVariant === "stare"` has no matching effect frame
@@ -138,7 +165,7 @@ function drawOverlayEffects(now: number, x: number, y: number): void {
   const cx = x + PET_SIZE / 2;
 
   if (pet.mode === "react" && inOverride && pet.reactVariant === "exclaim") {
-    drawEffect("exclaim", cx, y - 14, now);
+    drawEffect("exclaim", cx, aboveHeadY(y - 14), now);
   }
   if (pet.mode === "petted" && inOverride) {
     drawEffect("heart", cx + 14, y - 10, now);
@@ -147,36 +174,76 @@ function drawOverlayEffects(now: number, x: number, y: number): void {
     drawEffect("zzz", cx + PET_SIZE * 0.32, y - PET_SIZE * 0.12, now);
   }
   if (pet.mode === "gag" && inOverride) {
-    drawGagEffect(cx, y - 16, now);
+    drawGagEffect(cx, y, now);
   }
   if (now - pet.landedAt < 320) {
     drawEffect("dust", cx, y + PET_SIZE - 6, now);
   }
+
+  drawAgentStatusBadge(now, cx, y);
 }
 
-function drawEffect(tagName: string, cx: number, cy: number, now: number): void {
-  const frame = frameForTag(effectsAtlas, tagName, now);
-  if (!effectsAtlas || !frame) {
+/** Task 0017: agent turn-completed / needs-approval badge. Deliberately
+ * independent of `pet.mode` - it never occupies the override-mode state
+ * machine, so it can never block movement/eating/climbing and can't corrupt
+ * behavior state the way changing `pet.mode` would. `"needs_approval"` bobs
+ * gently to draw the eye without being intrusive; it persists (state.ts /
+ * behavior.ts own the clear/timeout logic) rather than looping here. */
+function drawAgentStatusBadge(now: number, cx: number, y: number): void {
+  if (agentStatusBadge.status === "completed") {
+    drawEffect("heart", cx, aboveHeadY(y - PET_SIZE * 0.55), now);
+  } else if (agentStatusBadge.status === "needs_approval") {
+    const bob = Math.sin(now / 260) * 3;
+    drawEffect("exclaim", cx, aboveHeadY(y - PET_SIZE * 0.55) + bob, now);
+  }
+}
+
+function drawEffectFromAtlas(atlas: SpriteAtlas | null, tagName: string, cx: number, cy: number, now: number): void {
+  const frame = frameForTag(atlas, tagName, now);
+  if (!atlas || !frame) {
     return;
   }
   const size = 22;
-  ctx.drawImage(effectsAtlas.image, frame.x, frame.y, frame.w, frame.h, cx - size / 2, cy - size / 2, size, size);
+  ctx.drawImage(atlas.image, frame.x, frame.y, frame.w, frame.h, cx - size / 2, cy - size / 2, size, size);
 }
 
-function drawGagEffect(cx: number, cy: number, now: number): void {
+function drawEffect(tagName: string, cx: number, cy: number, now: number): void {
+  drawEffectFromAtlas(effectsAtlas, tagName, cx, cy, now);
+}
+
+/** `cx`/`y` are the pet's on-screen center-x and top-y (pre-effect-offset),
+ * same anchor the other overlay effects use. `yawn` has no dedicated effect
+ * (a wide-mouth silhouette is the whole read); `stare` still has no matching
+ * effect frame and keeps its minimal procedural line. */
+function drawGagEffect(cx: number, y: number, now: number): void {
   if (pet.gagVariant === "sneeze" || pet.gagVariant === "chase-tail") {
-    drawEffect("dust", cx, cy, now);
+    drawEffect("dust", cx, aboveHeadY(y - 16), now);
     return;
   }
+  if (pet.gagVariant === "dance") {
+    drawEffectFromAtlas(notesAtlas, "notes", cx, aboveHeadY(y - PET_SIZE * 0.55), now);
+    return;
+  }
+  if (pet.gagVariant === "drink-break") {
+    // Beside the mouth on whichever side the pet is facing, rather than
+    // held - the Hatchling has no arms (task 0005/0014). Not "above the
+    // head", so it doesn't need hat clearance.
+    drawItemSprite("prop-drink-bottle", cx + pet.facing * 10 - 8, y + PET_SIZE * 0.32, 16, 16);
+    return;
+  }
+  if (pet.gagVariant === "yawn") {
+    return;
+  }
+  const lineY = aboveHeadY(y - 16);
   ctx.strokeStyle = "#f4f4f4";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(cx - 10, cy);
-  ctx.lineTo(cx + 10, cy);
+  ctx.moveTo(cx - 10, lineY);
+  ctx.lineTo(cx + 10, lineY);
   ctx.stroke();
 }
 
-function drawCosmetic(now: number): void {
+function drawCosmetic(): void {
   switch (state.equippedCosmetic) {
     case "hat-leaf":
       if (drawItemSprite("hat-leaf", -20, -43, 40, 40)) {
@@ -201,13 +268,6 @@ function drawCosmetic(now: number): void {
       ctx.fillRect(-10, -36, 5, 5);
       ctx.fillRect(2, -34, 5, 5);
       ctx.fillRect(-2, -40, 4, 4);
-      break;
-    case "halo-heirloom":
-      ctx.strokeStyle = "#ffcd75";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.ellipse(0, -34 + Math.sin(now / 300) * 1.5, 20, 5, 0, 0, Math.PI * 2);
-      ctx.stroke();
       break;
   }
 }
@@ -256,6 +316,9 @@ function drawFoodSkin(x: number, y: number): void {
     ctx.fillRect(x + 5, y + 7, 9, 2);
     return;
   }
+  if (drawItemSprite("food-default", x - 6, y - 7, 32, 32)) {
+    return;
+  }
   ctx.fillStyle = "#1a1c2c";
   ctx.fillRect(x + 3, y + 2, 12, 14);
   ctx.fillStyle = "#b13e53";
@@ -268,6 +331,9 @@ function drawFoodSkin(x: number, y: number): void {
 
 function drawFurniture(): void {
   for (const item of state.furniture) {
+    if (!item.visible) {
+      continue;
+    }
     const x = Math.round(furnitureX(item));
     const y = groundY() + PET_SIZE - 20;
     if (item.itemId === "furniture-bed") {

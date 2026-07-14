@@ -1,0 +1,16 @@
+id: tokengochi-sweetie16-v1/prop-drink-bottle
+palette: ["#1a1c2c", "#5d275d", "#257179", "#3b5dc9", "#41a6f6", "#73eff7", "#f4f4f4", "#94b0c2"]
+line:
+  weight: "1px native pixel outline"
+  style: uniform
+shading: flat-two-tone
+lighting: top-left
+camera: side
+proportions:
+  canvas: "16x16"
+  max_subject: "12x16"
+prompt_suffix: "strict Sweetie 16 pixel art, tiny rounded blue bottle prop, 1px #1a1c2c outline, flat top-left two-tone light, binary alpha, no anti-aliasing"
+negative: [arms, hands, gradients, partial-alpha, purple-or-blue-glow, bevels, non-palette-colors]
+source:
+  master: ui/assets/sprites/source/gag-expression-pack-master.png
+  plate: "#FF00FF"

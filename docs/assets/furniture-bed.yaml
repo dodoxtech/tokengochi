@@ -27,7 +27,7 @@ files:
   - path: ui/assets/sprites/items/furniture-bed-sprite-80x40.png
     size: 80x40
     format: png
-    bytes: 445
+    bytes: 441
 source:
   model: codex image generation
   prompt: "Tokengochi Sparks sink item sprite, tiny bed furniture, Sweetie 16 pixel art, chroma-magenta plate"

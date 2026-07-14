@@ -1,0 +1,17 @@
+id: tokengochi-sweetie16-v1/readme-cover-tokengochi
+palette: ["#0b1020", "#1a1c2c", "#29366f", "#3b5dc9", "#41a6f6", "#73eff7", "#ffcd75", "#ef7d57", "#a7f070", "#38b764", "#f4f4f4"]
+line:
+  weight: "chunky pixel-art edges"
+  style: selective
+shading: cinematic-pixel-art
+lighting: monitor glow plus moonlight, warm pet highlights
+camera: side-view desktop scene
+composition:
+  aspect: "16:9"
+  focal_point: "Hatchling pet in lower-right third, token-to-food stream from terminal"
+prompt_suffix: "polished full-bleed pixel-art cover illustration, no text, no logos, cozy developer desktop, crisp pixel texture"
+negative: [text, watermark, fake-logo, photorealism, blurry-ui, unreadable-letters, purple-glow-overload]
+source:
+  references:
+    - ui/assets/sprites/hatchling/hatchling.png
+    - ui/assets/sprites/items/food-default-sprite-32x32.png

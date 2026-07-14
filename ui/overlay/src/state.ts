@@ -4,7 +4,7 @@
 
 import { appWindow, canvas, ctx } from "./dom";
 import { BASE_PET_SIZE, FOOD_SIZE, HIT_PADDING } from "./constants";
-import type { ClimbPhase, Food, FurniturePlacement, PetMode, PetStatePayload, ReactVariant, GagVariant, Segment } from "./types";
+import type { AgentStatus, ClimbPhase, Food, FurniturePlacement, PetMode, PetStatePayload, ReactVariant, GagVariant, Segment } from "./types";
 
 export let PET_SIZE = BASE_PET_SIZE;
 
@@ -26,7 +26,33 @@ export const pet = {
   landedAt: 0,
   reactVariant: "squash" as ReactVariant,
   gagVariant: "sneeze" as GagVariant,
+  // Nap state: `headingToBed` is set by a randomized roll (mirrors the climb
+  // roll) and persists across the walk-over so a mid-walk food interruption
+  // doesn't cancel the trip; `sleepUntil` bounds how long the nap itself
+  // lasts once the pet actually reaches the bed.
+  headingToBed: false,
+  sleepUntil: 0,
 };
+
+/** Task 0017: a badge drawn independently of `pet.mode` (never blocks
+ * movement/eating/climbing) so an agent-status reaction can never corrupt the
+ * pet's own behavior state machine. `"completed"` auto-clears at `until`;
+ * `"needs_approval"` persists (bobbing) until cleared by interaction, a
+ * follow-up `"completed"` event, or the `until` safety-net timeout. */
+export const agentStatusBadge = {
+  status: null as AgentStatus | null,
+  until: 0,
+};
+
+export function setAgentStatusBadge(status: AgentStatus, until: number): void {
+  agentStatusBadge.status = status;
+  agentStatusBadge.until = until;
+}
+
+export function clearAgentStatusBadge(): void {
+  agentStatusBadge.status = null;
+  agentStatusBadge.until = 0;
+}
 
 export let state: PetStatePayload = {
   fullness: 100,
@@ -159,6 +185,7 @@ export function spawnFood(id: string): void {
     id,
     x: clamp(minX + Math.random() * (maxX - minX), minX, maxX),
     y: -FOOD_SIZE,
+    vy: 0,
     targetY,
     eaten: false,
     landedAt: -Infinity,

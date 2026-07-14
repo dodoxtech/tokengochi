@@ -1,0 +1,35 @@
+id: readme-cover-tokengochi
+type: social
+subject: Tokengochi README cover
+description: >
+  A full-bleed pixel-art developer desk scene at night: terminal code emits
+  glowing token squares that turn into food drops for the cheerful yellow
+  Hatchling pet on the desk. Used as the visual cover at the top of the
+  project README.
+keywords: [readme, cover, hero, tokengochi, hatchling, tokens, food, desktop-pet]
+placement:
+  intended_use: top-of-README project cover image
+  context: GitHub README, project overview, social previews when manually reused
+  do: [use full width, keep 16:9 aspect, pair with README title and badges]
+  dont: [do not crop tightly around the pet, do not overlay small text on busy areas]
+style:
+  profile: docs/assets/styles/style-profile-readme-cover-tokengochi.yaml
+  art_style: polished pixel-art illustration
+  shading: cinematic low-light, soft monitor glow
+palette: ["#0b1020", "#1a1c2c", "#29366f", "#3b5dc9", "#41a6f6", "#73eff7", "#ffcd75", "#ef7d57", "#a7f070", "#38b764", "#f4f4f4"]
+background: full-bleed
+dimensions:
+  master: 1600x900
+  aspect: "16:9"
+safe_area: center composition, pet lower-right
+accessibility:
+  alt_text: "Pixel-art Tokengochi pet watching AI tokens turn into food on a developer desktop"
+files:
+  - path: docs/assets/readme-cover-tokengochi-1600x900.png
+    size: 1600x900
+    format: png
+    bytes: 1305710
+source:
+  model: codex image generation
+  prompt: "Tokengochi README cover, pixel-art developer desktop at night, AI token squares turning into food drops, cheerful Hatchling pet, no text"
+  generated: 2026-07-14

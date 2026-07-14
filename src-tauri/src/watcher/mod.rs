@@ -8,11 +8,15 @@
 //! provider and consumes its events.
 #![allow(dead_code, unused_imports)]
 
+mod agent_status;
 mod claude_code;
 mod codex_cli;
 mod manual;
 mod openai;
 
+pub use agent_status::{
+    agent_status_events_path, start_agent_status_watcher, AgentStatus, AgentStatusEvent,
+};
 pub use claude_code::ClaudeCodeProvider;
 pub use codex_cli::CodexCliProvider;
 pub use manual::ManualProvider;

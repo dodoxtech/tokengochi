@@ -27,7 +27,7 @@ files:
   - path: ui/assets/sprites/items/hat-leaf-sprite-32x32.png
     size: 32x32
     format: png
-    bytes: 299
+    bytes: 298
 source:
   model: codex image generation
   prompt: "Tokengochi Sparks sink item sprite, leaf cap cosmetic, Sweetie 16 pixel art, chroma-magenta plate"

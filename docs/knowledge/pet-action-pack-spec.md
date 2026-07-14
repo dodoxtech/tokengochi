@@ -40,9 +40,9 @@ they have very different cost:
    every pet form going forward. After that change lands, the new tag is
    just another required row in the table below, and every existing form
    (including old ones) needs the matching frames added before its next
-   release — see [[../tasks/backlog/0014-expanded-gag-expression-pack]] for
-   the first batch of these (yawn, dance, drink-break, plus a dedicated
-   sneeze pose).
+   release. The first gag expansion is specified in
+   [[../tasks/done/0014-expanded-gag-expression-pack]]: yawn, dance,
+   drink-break, plus a dedicated sneeze pose.
 
 Do not skip tier 1's zero-code guarantee by hand-tuning `MODE_ANIMATION_TAG`
 per character — the whole point of the contract is that every form maps
@@ -77,13 +77,36 @@ decision.
 
 ### Gag tags (idle-flavored asides, `pet.mode === "gag"`)
 
-One tag per entry in `GAG_VARIANTS` (`ui/overlay/src/constants.ts`). As of
-this writing: `sneeze`, `stare`, `chase-tail` — all three currently render
-as the plain `idle` tag plus a procedural/effect overlay (see
-`drawGagEffect()` in `render.ts`), i.e. they have **no dedicated body art
-yet**. [[../tasks/backlog/0014-expanded-gag-expression-pack]] is the task
-to give `sneeze` real body frames and add `yawn`, `dance`, `drink-break` as
-new variants with their own tags.
+One tag per entry in `GAG_VARIANTS` (`ui/overlay/src/constants.ts`). Gag
+tags use the same 32x32, left-facing, Sweetie-16 style as the body tags:
+chunky silhouette, 1px `#1a1c2c` outline, binary alpha, flat two-tone
+shading, top-left light, and no anti-aliasing. Hatchling-derived forms keep
+the no-arms character read unless a later character-design ADR changes the
+whole family.
+
+The baseline implementation currently ships `sneeze`, `stare`, and
+`chase-tail` as procedural overlays on the plain `idle` tag. Task
+[[../tasks/done/0014-expanded-gag-expression-pack]] expands the contract:
+`sneeze`, `yawn`, `dance`, and `drink-break` are required authored gag
+tags for the next art pass, while `stare` and `chase-tail` may remain
+`idle`+effect fallbacks until a follow-up spec gives them dedicated poses.
+For existing forms, new gag tags may ship in a supplemental atlas such as
+`hatchling-gag-expressions.png`/`.json` instead of being appended to the
+base body sheet. Do not overwrite a proven base sheet just to add optional
+gags; the renderer should load the supplemental atlas when those variants
+are enabled.
+
+| Tag | Frames | Duration | Loop | Effects/props | Notes |
+|---|---:|---|---|---|---|
+| `sneeze` | 4 | 120, 90, 80, 150 ms | once | `dust` on release; optional droplet burst | Real body art replacing the current procedural-only gag: pullback, compressed anticipation, forward release, recovery |
+| `yawn` | 4 | 150, 250, 200, 200 ms | once | none | Wide-mouth silhouette is the key read; optional tiny motion line only if 1x legibility fails |
+| `dance` | 6 | 110 ms each | exactly x2 | `notes` above head | Bouncy two-step sway: left hop, center, right hop, center, left hop, center |
+| `drink-break` | 6 | 120, 120, 130, 130, 110, 110 ms | once | `prop-drink-bottle` | Floating bottle pops beside the mouth; pet tilts back for two gulps, then bottle pops out |
+
+Implementation detail: `drink-break` deliberately uses a floating/summoned
+prop rather than adding hands to the Hatchling. This preserves the current
+no-arms silhouette from task 0005 and keeps props shared across forms
+instead of forcing a per-gag body redesign.
 
 ### Effect tags (effects sheet, shared across all pet forms — author once, not per form)
 
@@ -93,12 +116,17 @@ new variants with their own tags.
 | `heart` | `petted` | yes |
 | `exclaim` | `react` (`reactVariant === "exclaim"`) | once |
 | `dust` | landing squash, `sneeze`/`chase-tail` gag | once |
+| `notes` | `dance` gag | yes |
 
 Effects live in `ui/assets/sprites/effects/` and are **not** duplicated per
 pet form — one effects sheet serves every character, since they're drawn
 in screen space at an anchor offset from the pet, not baked into the body
-sheet. A new gag/react variant that needs a new visual flourish (e.g. a
-music-note burst for `dance`) adds one tag here, once.
+sheet. A new gag/react variant that needs a new visual flourish adds one
+tag here, once. `notes` is specified as 2 frames at 200 ms each: a small
+Sweetie-16 music-note pair anchored above the head, following the same
+anchor behavior as `heart` for `petted`. Like gag body frames, new effects
+may ship as a supplemental atlas such as `effects-notes.png`/`.json` when
+changing the base `effects.png` would risk regressing existing overlays.
 
 ### Prop sprites (held/produced items, optional)
 
@@ -111,20 +139,24 @@ pattern already used for cosmetics/food/furniture: a standalone PNG in
 `drawCosmetic()`/`drawFoodSkin()` already do. A pet form does not need to
 author its own prop variant — props are shared, like effects.
 
-**Open design question:** the current Hatchling has no arms (see the
-character design note in task 0005). A held-prop gag needs either (a) a
-prop that appears/floats next to the pet without being "held" (matches the
-no-arms design, lowest effort), or (b) an arms redesign. Resolve this in
-[[../tasks/backlog/0014-expanded-gag-expression-pack]] before drawing
-frames — don't let each future pet form re-litigate it.
+The no-arms prop decision is resolved by
+[[../tasks/done/0014-expanded-gag-expression-pack]]: props for
+Hatchling-style forms may appear, float, or pop into place near the body
+without being visibly held. Do not add temporary arms for a single gag.
+`drink-break` uses shared prop sprite `prop-drink-bottle`: 16x16,
+Sweetie-16-only, rounded bottle/canteen silhouette, `#41a6f6` blue body
+(or `#38b764` green if the bottle read needs it), `#f4f4f4` highlight,
+and 1px `#1a1c2c` outline/cap.
 
 ## Folder layout for a new pet form
 
 ```
 ui/assets/sprites/<form-name>/
 ├── <form-name>.aseprite      # editable source
-├── <form-name>.png           # packed sheet: 7 body tags + N gag tags
-└── <form-name>.json          # Aseprite JSON (array) with frameTags
+├── <form-name>.png           # base packed sheet: 7 body tags
+├── <form-name>.json          # Aseprite JSON (array) with frameTags
+├── <form-name>-gag-expressions.png   # optional supplemental gag atlas
+└── <form-name>-gag-expressions.json  # gag frameTags, same schema
 ```
 
 Match `hatchling/` exactly. No new effects/props folder — those are shared
@@ -134,9 +166,10 @@ per [Effect tags](#effect-tags) and [Prop sprites](#prop-sprites) above.
 
 A pet form is a valid drop-in replacement when:
 
-- [ ] Its sheet has every tag in [Required Tags](#required-tags) (7 body +
-      current `GAG_VARIANTS` list), each with a `meta.frameTags` entry
-      matching the schema in task 0005.
+- [ ] Its base sheet has every required body tag, and either the base sheet
+      or supplemental gag atlas has every current authored `GAG_VARIANTS`
+      tag, each with a `meta.frameTags` entry matching the schema in task
+      0005.
 - [ ] PNG is Sweetie-16-only opaque pixels, binary alpha (same lint as
       task 0005's acceptance criteria).
 - [ ] Loops/terminates correctly for every tag in a manual pass (`once`

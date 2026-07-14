@@ -27,7 +27,7 @@ files:
   - path: ui/assets/sprites/items/food-sushi-sprite-32x32.png
     size: 32x32
     format: png
-    bytes: 278
+    bytes: 285
 source:
   model: codex image generation
   prompt: "Tokengochi Sparks sink item sprite, sushi food skin, Sweetie 16 pixel art, chroma-magenta plate"

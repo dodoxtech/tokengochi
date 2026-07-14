@@ -46,6 +46,18 @@ Events are deduplicated by `(provider, message_id)` in the ledger so re-reads ne
 
 - User enters tokens or clicks a "simulate session" button. Earns at ×0.25 rate, capped progression ([[game-economy|Game Economy]] §7).
 
+## Agent Status Events (turn completed / needs approval)
+
+Separate from token-usage tracking above: task 0017 adds a second, much
+smaller event type - `AgentStatusEvent` (`provider`, `session_id`, `status`,
+`ts`) - so the pet can react with a cute badge when an agent's turn finishes
+or needs approval. It is sourced from Claude Code **hooks**, not JSONL log
+parsing (the JSONL schema doesn't reliably carry either signal - see Open
+Questions below), and is deliberately decoupled from the economy engine: it
+never touches fullness/XP/food. Full detail, the hook JSON to install, and
+the local file bridge: [[agent-status-notifications|Agent Status
+Notifications]].
+
 ## Privacy Rules
 
 - Read only `usage` numeric fields and message ids; never read or store message content.

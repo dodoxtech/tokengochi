@@ -27,7 +27,7 @@ files:
   - path: ui/assets/sprites/items/furniture-plant-sprite-80x40.png
     size: 80x40
     format: png
-    bytes: 478
+    bytes: 477
 source:
   model: codex image generation
   prompt: "Tokengochi Sparks sink item sprite, desk plant furniture, Sweetie 16 pixel art, chroma-magenta plate"

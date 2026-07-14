@@ -14,6 +14,7 @@ export type ClimbPhase = "approach" | "ascend" | "landed" | "sit" | "jump-up" | 
 export interface FurniturePlacement {
   itemId: string;
   x: number;
+  visible: boolean;
 }
 
 export interface PetStatePayload {
@@ -34,6 +35,21 @@ export interface PetStatePayload {
 export interface FoodSpawnedPayload {
   id: string;
   pendingFood: number;
+}
+
+/** Task 0017: agent turn-completed / needs-approval events, forwarded from a
+ * Claude Code hook via the Rust `agent_status_changed` event. `resolved`
+ * (added 2026-07-14) fires from `PostToolUse`/`PermissionDenied` - the
+ * permission prompt got resolved (approved+ran, or denied) - and only ever
+ * silently clears a pending `needs_approval` badge; it never sets a badge of
+ * its own. */
+export type AgentStatus = "completed" | "needs_approval" | "resolved";
+
+export interface AgentStatusPayload {
+  provider: string;
+  sessionId: string;
+  status: AgentStatus;
+  ts: number;
 }
 
 export interface OverlaySettingsPayload {
@@ -64,6 +80,7 @@ export interface Food {
   id: string;
   x: number;
   y: number;
+  vy: number;
   targetY: number;
   eaten: boolean;
   landedAt: number;

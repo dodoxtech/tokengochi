@@ -1,0 +1,37 @@
+id: food-default
+type: sprite
+subject: default food drop
+description: >
+  A tiny red berry/apple-like snack with a small green leaf and dark outline,
+  used as the default food drop when no Sparks food skin is equipped.
+keywords: [default-food, food, berry, apple, snack, drop]
+placement:
+  intended_use: default food drop in the overlay renderer
+  context: Tokengochi overlay food queue, before any food skin is equipped
+  do: [use at native pixel size or integer scale, preserve transparent alpha]
+  dont: [do not stretch non-uniformly, do not bilinear scale]
+style:
+  profile: docs/assets/styles/style-profile-food-default.yaml
+  art_style: Sweetie 16 pixel art
+  stroke: 1px native pixel outline
+  shading: flat two-tone
+palette: ["#1a1c2c", "#333c57", "#38b764", "#a7f070", "#b13e53", "#ef7d57"]
+background: transparent
+dimensions:
+  master: ui/assets/sprites/source/food-default-master.png
+  output: 32x32
+  aspect: "1:1"
+safe_area: inner padded cell
+accessibility:
+  alt_text: "Default berry-like pixel-art food"
+files:
+  - path: ui/assets/sprites/items/food-default-sprite-32x32.png
+    size: 32x32
+    format: png
+    bytes: 272
+source:
+  model: codex image generation
+  prompt: "Tokengochi default generic pet food treat, tiny red berry/apple-like snack with green leaf, Sweetie 16 pixel art, chroma-magenta plate"
+  generated: 2026-07-13
+  master: ui/assets/sprites/source/food-default-master.png
+  postprocess: ui/assets/sprites/scripts/generate-food-default-from-master.mjs

@@ -26,6 +26,7 @@ pub struct AppSettings {
     pub wayland_fallback: bool,
     pub tracking_paused: bool,
     pub calm_mode: bool,
+    pub agent_status_notifications_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -41,6 +42,7 @@ impl Default for AppSettings {
             wayland_fallback: false,
             tracking_paused: false,
             calm_mode: false,
+            agent_status_notifications_enabled: true,
         }
     }
 }
@@ -348,7 +350,8 @@ impl GameStateStore {
             .query_row(
                 "SELECT onboarding_complete, starter_egg, claude_code_enabled,
                         codex_cli_enabled, openai_enabled, pet_size, monitor_index,
-                        wayland_fallback, tracking_paused, calm_mode
+                        wayland_fallback, tracking_paused, calm_mode,
+                        agent_status_notifications_enabled
                  FROM app_settings
                  WHERE id = 1",
                 [],
@@ -364,6 +367,7 @@ impl GameStateStore {
                         wayland_fallback: row.get::<_, i64>(7)? != 0,
                         tracking_paused: row.get::<_, i64>(8)? != 0,
                         calm_mode: row.get::<_, i64>(9)? != 0,
+                        agent_status_notifications_enabled: row.get::<_, i64>(10)? != 0,
                     })
                 },
             )
@@ -376,9 +380,10 @@ impl GameStateStore {
             "INSERT INTO app_settings (
                 id, onboarding_complete, starter_egg, claude_code_enabled,
                 codex_cli_enabled, openai_enabled, pet_size, monitor_index,
-                wayland_fallback, tracking_paused, calm_mode, updated_at_unix
+                wayland_fallback, tracking_paused, calm_mode,
+                agent_status_notifications_enabled, updated_at_unix
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 onboarding_complete = excluded.onboarding_complete,
                 starter_egg = excluded.starter_egg,
@@ -390,6 +395,7 @@ impl GameStateStore {
                 wayland_fallback = excluded.wayland_fallback,
                 tracking_paused = excluded.tracking_paused,
                 calm_mode = excluded.calm_mode,
+                agent_status_notifications_enabled = excluded.agent_status_notifications_enabled,
                 updated_at_unix = excluded.updated_at_unix",
             params![
                 bool_to_i64(settings.onboarding_complete),
@@ -402,6 +408,7 @@ impl GameStateStore {
                 bool_to_i64(settings.wayland_fallback),
                 bool_to_i64(settings.tracking_paused),
                 bool_to_i64(settings.calm_mode),
+                bool_to_i64(settings.agent_status_notifications_enabled),
                 now_unix,
             ],
         )?;
@@ -531,6 +538,7 @@ fn migrate_app_settings_columns(conn: &Connection) -> rusqlite::Result<()> {
         ("codex_cli_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("openai_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("calm_mode", "INTEGER NOT NULL DEFAULT 0"),
+        ("agent_status_notifications_enabled", "INTEGER NOT NULL DEFAULT 1"),
     ];
 
     for (name, definition) in columns {
@@ -614,6 +622,7 @@ mod tests {
             wayland_fallback: true,
             tracking_paused: true,
             calm_mode: true,
+            agent_status_notifications_enabled: false,
         };
 
         store.save_app_settings(&settings, 300).unwrap();

@@ -8,15 +8,16 @@ import {
   CLICK_COMBO_WINDOW_MS,
   CLIMB_CHANCE,
   CLIMB_SPEED,
-  DROP_SPEED,
   EAT_MS,
   FOOD_BOUNCE_MAX_DRIFT_X,
   FOOD_BOUNCE_MAX_HEIGHT,
   FOOD_BOUNCE_MIN_HEIGHT,
+  FOOD_GRAVITY,
   FOOD_SIZE,
+  FOOD_TERMINAL_FALL_SPEED,
+  GAG_VARIANT_DURATION_MS,
   GAG_VARIANTS,
   GRAVITY,
-  JUMP_DOWN_SPEED,
   JUMP_UP_HEIGHT,
   JUMP_UP_SPEED,
   LANDING_PAUSE_MS,
@@ -25,16 +26,23 @@ import {
   MAX_CLIMB_INTERVAL_MS,
   MIN_CLIMB_INTERVAL_MS,
   MIN_GAG_INTERVAL_MS,
+  MAX_SLEEP_DURATION_MS,
+  MAX_SLEEP_INTERVAL_MS,
+  MIN_SLEEP_DURATION_MS,
+  MIN_SLEEP_INTERVAL_MS,
   PET_BUMP_COOLDOWN_MS,
   PET_STROKE_MS,
   REACT_VARIANTS,
+  SLEEP_CHANCE,
   TERMINAL_FALL_SPEED,
   WALK_SPEED,
 } from "./constants";
 import {
   PET_SIZE,
+  agentStatusBadge,
   calmMode,
   clamp,
+  clearAgentStatusBadge,
   foods,
   furnitureX,
   hover,
@@ -60,6 +68,7 @@ let hoverStrokeStartedAt: number | null = null;
 let lastPetBumpAt = 0;
 let nextGagAt = randomGagDelay(performance.now());
 let nextClimbRollAt = randomClimbDelay(performance.now());
+let nextSleepRollAt = randomSleepDelay(performance.now());
 
 function randomGagDelay(now: number): number {
   return now + MIN_GAG_INTERVAL_MS + Math.random() * (MAX_GAG_INTERVAL_MS - MIN_GAG_INTERVAL_MS);
@@ -67,6 +76,14 @@ function randomGagDelay(now: number): number {
 
 function randomClimbDelay(now: number): number {
   return now + MIN_CLIMB_INTERVAL_MS + Math.random() * (MAX_CLIMB_INTERVAL_MS - MIN_CLIMB_INTERVAL_MS);
+}
+
+function randomSleepDelay(now: number): number {
+  return now + MIN_SLEEP_INTERVAL_MS + Math.random() * (MAX_SLEEP_INTERVAL_MS - MIN_SLEEP_INTERVAL_MS);
+}
+
+function randomSleepDuration(): number {
+  return MIN_SLEEP_DURATION_MS + Math.random() * (MAX_SLEEP_DURATION_MS - MIN_SLEEP_DURATION_MS);
 }
 
 // Food waiting on the ground always takes priority over any in-progress
@@ -78,10 +95,13 @@ function hasWaitingFood(): boolean {
 }
 
 export function updateFood(dtMs: number, now: number): void {
+  const dt = dtMs / 1000;
   for (const food of foods) {
     if (food.y < food.targetY) {
-      const next = Math.min(food.targetY, food.y + (DROP_SPEED * dtMs) / 1000);
+      food.vy = Math.min(FOOD_TERMINAL_FALL_SPEED, food.vy + FOOD_GRAVITY * dt);
+      const next = Math.min(food.targetY, food.y + food.vy * dt);
       if (next >= food.targetY) {
+        food.vy = 0;
         food.landedAt = now;
         food.bounceHeight =
           FOOD_BOUNCE_MIN_HEIGHT + Math.random() * (FOOD_BOUNCE_MAX_HEIGHT - FOOD_BOUNCE_MIN_HEIGHT);
@@ -184,20 +204,25 @@ function updateClimb(dtMs: number, now: number): void {
       return;
     }
     pet.y = pet.jumpPeakY;
+    pet.vy = 0;
     pet.climbPhase = "jump-fall";
     return;
   }
 
   if (pet.climbPhase === "jump-fall") {
+    const dt = dtMs / 1000;
+    // Accelerate like a real fall (same GRAVITY as the throw/drag tumble)
+    // rather than dropping at a constant speed, so a deliberate jump-down
+    // reads the same as any other fall.
+    pet.vy = Math.min(TERMINAL_FALL_SPEED, pet.vy + GRAVITY * dt);
     const target = groundY();
-    const dy = target - pet.y;
-    if (Math.abs(dy) > 3) {
-      // The fall should read as quick and deliberate, not a slow crawl -
-      // JUMP_DOWN_SPEED is intentionally much faster than CLIMB_SPEED.
-      pet.y += Math.sign(dy) * Math.min(Math.abs(dy), (JUMP_DOWN_SPEED * dtMs) / 1000);
+    const nextY = pet.y + pet.vy * dt;
+    if (nextY < target) {
+      pet.y = nextY;
       return;
     }
     pet.y = target;
+    pet.vy = 0;
     pet.supportId = "floor";
     // A brief "getting up" pause before the pet moves off again, mirroring
     // the landing squash already keyed off `landedAt` in render.ts.
@@ -263,6 +288,12 @@ function updateClimb(dtMs: number, now: number): void {
   }
 
   // ascend
+  if (hasWaitingFood()) {
+    // Food landed mid-climb - food always outranks a ledge trip, so turn
+    // around and jump back down instead of finishing the ascent first.
+    beginDescend();
+    return;
+  }
   const target = surfaceY(targetSegment);
   const dy = target - pet.y;
   if (Math.abs(dy) > 3) {
@@ -277,6 +308,22 @@ function updateClimb(dtMs: number, now: number): void {
   pet.landedAt = now;
 }
 
+/** Randomized roll for whether the pet decides to walk over to a placed bed
+ * for a nap - same "occasionally, not every idle tick" pattern as
+ * `maybeStartClimb`. Only sets the intent (`headingToBed`); the actual walk
+ * and the nap's bounded duration are handled in `updatePet()`. */
+function maybeStartSleep(now: number): boolean {
+  if (calmMode || now < nextSleepRollAt) {
+    return false;
+  }
+  nextSleepRollAt = randomSleepDelay(now);
+  if (Math.random() >= SLEEP_CHANCE) {
+    return false;
+  }
+  pet.headingToBed = true;
+  return true;
+}
+
 function maybeTriggerIdleGag(now: number): boolean {
   if (calmMode || now < nextGagAt) {
     return false;
@@ -284,11 +331,31 @@ function maybeTriggerIdleGag(now: number): boolean {
   nextGagAt = randomGagDelay(now);
   pet.gagVariant = GAG_VARIANTS[Math.floor(Math.random() * GAG_VARIANTS.length)] as GagVariant;
   pet.mode = "gag";
-  pet.overrideUntil = now + 1800;
+  pet.overrideUntil = now + GAG_VARIANT_DURATION_MS[pet.gagVariant];
   return true;
 }
 
 export function triggerClickReaction(now: number): void {
+  // Climbing (approach/ascend/sit/jump reuse the "walk"/"idle" tags, so a
+  // mid-climb pet looks just like ordinary floor walking) and tumbling both
+  // carry position state (`pet.y`, `pet.supportId`, `pet.vx/vy`) that the
+  // generic post-react seek/idle logic never reconstructs. Clobbering
+  // `pet.mode` mid-transit here left the pet frozen at the wrong height (or
+  // stuck on a ledge forever) once the react override ended, which read as
+  // the pet "teleporting" beside where it stopped instead of resuming from
+  // there - so ignore clicks until the pet is back on solid, steady ground.
+  // "landing" is included for the same reason: a click during the post-fall
+  // recovery beat would hijack `pet.mode` into a react/dizzy/sulk override
+  // mid-recovery, breaking the intended land -> get up -> resume-walking
+  // sequence (e.g. resuming a walk to the bed) into two overlapping actions.
+  if (pet.mode === "climb" || pet.mode === "tumble" || pet.mode === "landing") {
+    return;
+  }
+  // A click is the user acknowledging the pet - clears a pending
+  // "needs approval" attention badge (task 0017) same as petting does.
+  if (agentStatusBadge.status === "needs_approval") {
+    clearAgentStatusBadge();
+  }
   clickTimestamps = clickTimestamps.filter((t) => now - t < CLICK_COMBO_WINDOW_MS);
   clickTimestamps.push(now);
 
@@ -334,6 +401,9 @@ function maybeTriggerPetting(now: number): void {
     return;
   }
   hoverStrokeStartedAt = null;
+  if (agentStatusBadge.status === "needs_approval") {
+    clearAgentStatusBadge();
+  }
   pet.mode = "petted";
   pet.overrideUntil = now + 1200;
   if (now - lastPetBumpAt >= PET_BUMP_COOLDOWN_MS) {
@@ -346,6 +416,16 @@ function maybeTriggerPetting(now: number): void {
         // Non-fatal: the pet still gets the visual/affection response even
         // if the rate-limited fullness bump couldn't be persisted this time.
       });
+  }
+}
+
+/** Task 0017 safety net: clears a stale badge past its `until` timestamp -
+ * the short celebration window for `"completed"`, or the long timeout for an
+ * unacknowledged `"needs_approval"` (in case the approval resolved while
+ * Tokengochi wasn't running to see the follow-up event, or a hook double-fired). */
+export function updateAgentStatusBadge(now: number): void {
+  if (agentStatusBadge.status !== null && now > agentStatusBadge.until) {
+    clearAgentStatusBadge();
   }
 }
 
@@ -409,17 +489,40 @@ export function updatePet(dtMs: number, now: number): void {
       pet.mode = "happy";
       return;
     }
-    const bed = state.furniture.find((item) => item.itemId === "furniture-bed");
-    if (bed) {
-      const bedX = furnitureX(bed) + 10;
-      const dx = bedX - pet.x;
-      pet.facing = dx >= 0 ? 1 : -1;
-      if (Math.abs(dx) > 5) {
-        pet.mode = "seek";
-        pet.x += Math.sign(dx) * Math.min(Math.abs(dx), (WALK_SPEED * 0.62 * dtMs) / 1000);
+
+    if (pet.mode === "sleep") {
+      if (now < pet.sleepUntil) {
+        return; // still napping
+      }
+      // Nap's over - wake up and let gag/climb rolls compete for the next
+      // idle beat instead of immediately re-triggering another nap.
+      pet.headingToBed = false;
+      pet.mode = "idle";
+      return;
+    }
+
+    const bed = state.furniture.find((item) => item.itemId === "furniture-bed" && item.visible);
+
+    if (pet.headingToBed) {
+      if (!bed) {
+        // Bed got removed/unequipped mid-walk - abandon the trip.
+        pet.headingToBed = false;
+      } else {
+        const bedX = furnitureX(bed) + 10;
+        const dx = bedX - pet.x;
+        pet.facing = dx >= 0 ? 1 : -1;
+        if (Math.abs(dx) > 5) {
+          pet.mode = "seek";
+          pet.x += Math.sign(dx) * Math.min(Math.abs(dx), (WALK_SPEED * 0.62 * dtMs) / 1000);
+          return;
+        }
+        pet.mode = "sleep";
+        pet.sleepUntil = now + randomSleepDuration();
         return;
       }
-      pet.mode = "sleep";
+    }
+
+    if (bed && maybeStartSleep(now)) {
       return;
     }
     if (maybeTriggerIdleGag(now)) {

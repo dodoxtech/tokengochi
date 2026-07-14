@@ -18,7 +18,6 @@ const outputDir = path.join(root, 'items');
 const descriptorDir = path.join(projectRoot, 'docs/assets');
 const stylesDir = path.join(projectRoot, 'docs/assets/styles');
 const plate = [255, 0, 255];
-const plateThreshold = 200;
 const palette = [
   [0x1a, 0x1c, 0x2c],
   [0xef, 0x7d, 0x57],
@@ -113,6 +112,14 @@ function distanceToPlate(r, g, b) {
   return Math.sqrt(dr * dr + dg * dg + db * db);
 }
 
+// A pixel is plate only if it is actually magenta-hued: both red and blue
+// dominate green. Distance alone misclassifies warm reds (e.g. the sushi
+// filling ~#EE4D58 sits within 200 of #FF00FF) as background.
+function isPlate(r, g, b) {
+  const magentaHued = r - g > 90 && b - g > 90;
+  return magentaHued && distanceToPlate(r, g, b) < 360;
+}
+
 function keyedCell(master, left, top, width, height) {
   const out = Buffer.alloc(width * height * 4);
   let minX = width;
@@ -128,7 +135,7 @@ function keyedCell(master, left, top, width, height) {
       const g = master.data[srcOffset + 1];
       const b = master.data[srcOffset + 2];
       const a = master.data[srcOffset + 3];
-      const opaque = a > 0 && distanceToPlate(r, g, b) > plateThreshold;
+      const opaque = a > 0 && !isPlate(r, g, b);
       out[dstOffset] = r;
       out[dstOffset + 1] = g;
       out[dstOffset + 2] = b;

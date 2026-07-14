@@ -28,7 +28,7 @@ Related: [[architecture|Architecture]] (data flow), [[game-economy|Game Economy]
 | Falling / being thrown / bouncing off edges (drag-release only) | `ui/overlay/src/behavior.ts` → `updateTumble()`, `beginDrop()` |
 | Climbing onto other app windows / jumping back down to eat or sleep | `ui/overlay/src/behavior.ts` → `maybeStartClimb()`, `updateClimb()`, `beginDescend()` |
 | Idle random gags (sneeze/stare/chase-tail) | `ui/overlay/src/behavior.ts` → `maybeTriggerIdleGag()` |
-| Adding a new pet form, or a new gag/expression (yawn, dance, drink-break, …) | [[pet-action-pack-spec|Pet Action Pack Spec]] (required tag contract); planned batch in [[../tasks/backlog/0014-expanded-gag-expression-pack|0014]] |
+| Adding a new pet form, or a new gag/expression (yawn, dance, drink-break, …) | [[pet-action-pack-spec|Pet Action Pack Spec]] (required tag contract); planned batch in [[../tasks/done/0014-expanded-gag-expression-pack|0014]] |
 | Click reactions / rage-quit combo | `ui/overlay/src/behavior.ts` → `triggerClickReaction()`, `updateSulk()` |
 | Petting / stroke detection | `ui/overlay/src/behavior.ts` → `maybeTriggerPetting()` |
 | Dragging the pet with the mouse | `ui/overlay/src/input.ts` → `mousedown`/`mousemove`/`mouseup` listeners inside `initInput()` |
@@ -42,6 +42,8 @@ Related: [[architecture|Architecture]] (data flow), [[game-economy|Game Economy]
 | Click-through / hit-testing / window flags | `ui/overlay/src/state.ts` → `isOverPet()`; `ui/overlay/src/input.ts` → `updateHitTest()`; `src-tauri/src/overlay_window.rs` |
 | Climbable window segments (other app windows) | `src-tauri/src/window_geometry/mod.rs` (`enumerate_windows`), emitted as `window_segments_changed` |
 | Sprite atlas / animation frame lookup | `ui/overlay/src/atlas.ts` → `loadAtlas()`, `frameForTag()` |
+| Pet reacting to Claude turn-completed / needs-approval (task 0017) | `src-tauri/src/watcher/agent_status.rs` (hook-file tailer) → `lib.rs` `start_agent_status_notify_watcher()` (emits `agent_status_changed`) → `ui/overlay/src/state.ts` `agentStatusBadge` → `render.ts` `drawAgentStatusBadge()`; see [[agent-status-notifications\|Agent Status Notifications]] |
+| Auto-installing the Claude Code `Stop`/`PermissionRequest`/`PostToolUse`/`PermissionDenied` hooks (dashboard "Install hook" button) | `src-tauri/src/claude_hooks.rs` (`MANAGED_HOOKS`, `status()`/`install()`) → `lib.rs` `agent_status_hook_status`/`install_agent_status_hooks` commands → `ui/dashboard/src/routes/+page.svelte` (`agentStatusHookStatus`, `installAgentStatusHooks()`); see [[agent-status-notifications\|Agent Status Notifications]] |
 
 ## Frontend: `ui/overlay/src/` (behavior AI + renderer)
 
@@ -86,7 +88,10 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
   `pruneEatenFood()` (splices `eaten` entries out of `foods[]` — without it
   the array grew unbounded over a long-running session since eaten food was
   only ever flagged, never removed, and every tick/draw walked the whole
-  array).
+  array). `agentStatusBadge` (task 0017) — `{status, until}`, set by
+  `setAgentStatusBadge()`/`clearAgentStatusBadge()`; deliberately separate
+  from `pet.mode` so the badge can never enter the override-mode state
+  machine and corrupt movement/eating/climbing.
 - **`behavior.ts`** (comment-marked sections for "Task 0012 physics/override
   modes" and the 0005/0006 baseline):
   - `beginDrop(now, vx, vy)` — enters free-fall (`mode = "tumble"`); reserved
@@ -108,7 +113,17 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
     only calls `beginDescend()` to jump back down once there's unclaimed food
     waiting on the floor (or the ledge itself becomes invalid/walked off).
     There is no idle timer that pulls the pet down on its own.
-  - `maybeTriggerIdleGag()` — random sneeze/stare/chase-tail.
+  - `maybeStartSleep()` — randomized roll (same pattern as
+    `maybeStartClimb()`, gated by `SLEEP_CHANCE`/`MIN_SLEEP_INTERVAL_MS`/
+    `MAX_SLEEP_INTERVAL_MS`) for whether the pet walks to a placed
+    `furniture-bed` for a nap; `pet.headingToBed` persists the intent
+    across the walk, and the nap itself is capped by
+    `pet.sleepUntil` (`MIN_SLEEP_DURATION_MS`–`MAX_SLEEP_DURATION_MS`)
+    before waking back to `idle`. Replaces the earlier "any bed present
+    means beeline for it and sleep forever" behavior, which crowded out
+    gag/climb entirely.
+  - `maybeTriggerIdleGag()` — random sneeze/stare/chase-tail/yawn/dance/
+    drink-break (task 0016).
   - `triggerClickReaction()` / `updateSulk()` — click combo → dizzy/sulk
     escalation; otherwise squash/spin/look/exclaim reaction.
   - `maybeTriggerPetting()` — hover-and-hold detection, calls `pet_petted`
@@ -119,8 +134,11 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
     (`dizzy`/`sulk`/`react`/`petted`/`gag`/`landing`) → petting check → if
     not on the floor, `beginDescend()` *only when* there's unclaimed food
     waiting (otherwise stays put on the ledge) → seek nearest unclaimed food
-    → walk to bed when idle → idle gag/climb rolls → `idle`. Food-eating
-    sub-branch at the bottom calls `invoke("pet_ate")`.
+    → if already asleep, stay asleep until `pet.sleepUntil` → if already
+    heading to a placed bed, keep walking/settle into `sleep` → idle
+    sleep/gag/climb rolls (in that priority order, each a randomized
+    "maybe") → `idle`. Food-eating sub-branch at the bottom calls
+    `invoke("pet_ate")`.
   - `updateFood(dtMs, now)` — animates queued food sprites dropping to the
     floor; stamps `food.landedAt = now` the frame each one reaches
     `targetY`, which `render.ts` reads to draw a brief landing bounce.
@@ -129,7 +147,9 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
   ledge should read as idle, not mid-climb), `drawSpiralEyes()` (dizzy),
   `drawOverlayEffects()`/`drawEffect()`/`drawGagEffect()`, `drawCosmetic()`,
   `drawFood()`/`drawFoodSkin()`, `drawFurniture()`, `drawTooltip()`,
-  `draw()` (composes the frame — called once per `tick()`).
+  `drawAgentStatusBadge()` (task 0017, called from `drawOverlayEffects()` —
+  reads `agentStatusBadge` independent of `pet.mode`), `draw()` (composes
+  the frame — called once per `tick()`).
 - **`input.ts`** — `updateHitTest()` (toggles OS click-through so clicks
   pass through except over the pet sprite), `pollCursorForHover()` (breaks
   the click-through chicken-and-egg deadlock), `initInput()` registers
@@ -137,14 +157,18 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
   a drag → `mode = "dragged"`), `mousedown`, `mouseup` (releasing a drag
   calls `beginDrop()` with throw velocity, capped by `MAX_THROW_SPEED`),
   `blur`.
-- **`main.ts`** — `tick(now)` (computes `dtMs`, throttles to
-  `ACTIVE_TICK_MS` (30fps moving) or `IDLE_TICK_MS` (2fps idle/sleeping) —
-  stays on the active rate through `LANDING_PAUSE_MS` after a landing so the
-  jump-down/recovery beat doesn't stutter, calls `updatePet()` +
-  `updateFood()` + `pruneEatenFood()` + `draw()`); Tauri event listeners
-  `food_spawned` (push into `foods[]`), `pet_state_changed`,
+- **`main.ts`** — `tick(now)` (computes `dtMs`, capped at `MAX_FRAME_DT_MS` so
+  a render-loop stall — tab backgrounded, OS/IPC hiccup — can't hand a single
+  tick a huge delta and let per-tick movement formulas (walk-speed steps,
+  tumble physics) cover a target's entire remaining distance in one frame,
+  throttles to `ACTIVE_TICK_MS` (30fps moving) or `IDLE_TICK_MS` (2fps
+  idle/sleeping) — stays on the active rate through `LANDING_PAUSE_MS` after a
+  landing so the jump-down/recovery beat doesn't stutter, calls `updatePet()` +
+  `updateFood()` + `updateAgentStatusBadge()` + `pruneEatenFood()` + `draw()`);
+  Tauri event listeners `food_spawned` (push into `foods[]`), `pet_state_changed`,
   `overlay_settings_changed`, `window_segments_changed` (updates
-  `windowSegments` used by climb logic); initial `get_pet_state` invoke and
+  `windowSegments` used by climb logic), `agent_status_changed` (task 0017 —
+  sets `agentStatusBadge` via `setAgentStatusBadge()`); initial `get_pet_state` invoke and
   `initInput()` call on startup.
 
 ## Backend: Rust (`src-tauri/src/`)
@@ -164,13 +188,27 @@ reassign an imported `let` directly (JS/TS restriction on live bindings),
 - **`lib.rs`** (~826 lines) — Tauri command registration and app wiring.
   Commands the overlay calls: `get_pet_state` (~L134), `pet_ate` (~L262),
   `pet_petted` (~L294), `buy_shop_item`/`equip_shop_item`/`place_furniture`/
-  `prestige_pet` (~L320-374), `debug_add_sparks` (~L376, dev-build-only —
-  no-ops behind `cfg!(debug_assertions)`, used by the dashboard's dev-only
-  Sparks button to manually test shop sinks without grinding). `apply_token_event()`
+  `toggle_furniture_visibility`/`prestige_pet` (~L320-390). `equip_shop_item`
+  toggles: calling it again with the same equipped item id unequips
+  (sets `equipped_cosmetic`/`equipped_food_skin` back to `None`).
+  `toggle_furniture_visibility` flips a placed item's `visible` flag without
+  losing its `x` position or ownership — this is how a sink item gets
+  "turned off" without re-buying it. `apply_token_event()`
   (~L557) is where a watcher-reported token usage event turns into economy
   updates and eventually a `food_spawned` emit. `start_window_geometry_watcher()`
   (~L546) polls other-app window positions and emits
   `window_segments_changed`, which feeds the climb behavior above.
+  `start_agent_status_notify_watcher()` (task 0017) forwards hook-sourced
+  `AgentStatusEvent`s as `agent_status_changed`, gated by
+  `agent_status_notifications_enabled` and deliberately not touching
+  `GameRuntime` - see [[agent-status-notifications|Agent Status
+  Notifications]].
+- **`watcher/agent_status.rs`** (task 0017) — tails
+  `<data_dir>/tokengochi/agent_status_events.jsonl`, the local file Claude
+  Code hooks (`resources/claude-hooks/tokengochi-notify.sh`) append to.
+  Same offset-persisted tailing shape as `watcher/claude_code.rs` but far
+  simpler (no token math, no message-id dedup - each line is a fresh
+  one-shot event).
 - **`overlay_window.rs`** (138 lines) — `fit_to_monitor()` (positions the
   transparent overlay window per monitor), `visible_frame_physical()`
   (click-through geometry helper).

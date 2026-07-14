@@ -1,3 +1,4 @@
+mod claude_hooks;
 mod economy;
 mod overlay_window;
 mod pet;
@@ -21,7 +22,10 @@ use std::sync::{
 use store::{AppSettings, FoodStats, GameStateStore, Ledger, TokenTotals};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt;
-use watcher::{ClaudeCodeProvider, CodexCliProvider, OpenAiProvider, TokenEvent, TokenProvider};
+use watcher::{
+    start_agent_status_watcher, AgentStatusEvent, ClaudeCodeProvider, CodexCliProvider,
+    OpenAiProvider, TokenEvent, TokenProvider,
+};
 
 /// Managed state holding the economy balance constants loaded from
 /// `economy.toml` at startup. Named distinctly from `economy::EconomyState`
@@ -44,6 +48,7 @@ struct GameRuntime {
 struct GameRuntimeState(Arc<Mutex<GameRuntime>>);
 struct TrackingState(Arc<AtomicBool>);
 struct CalmModeState(Arc<AtomicBool>);
+struct AgentStatusNotifyState(Arc<AtomicBool>);
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +87,29 @@ struct PetStatePayload {
 struct FoodSpawnedPayload {
     id: String,
     pending_food: u32,
+}
+
+/// Emitted as `agent_status_changed` when an agent-status hook event (task
+/// 0017) passes the `agent_status_notifications_enabled` gate. Mirrors
+/// [`AgentStatusEvent`] but in the camelCase shape the overlay expects.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentStatusPayload {
+    provider: String,
+    session_id: String,
+    status: watcher::AgentStatus,
+    ts: i64,
+}
+
+impl From<&AgentStatusEvent> for AgentStatusPayload {
+    fn from(event: &AgentStatusEvent) -> Self {
+        Self {
+            provider: event.provider.clone(),
+            session_id: event.session_id.clone(),
+            status: event.status,
+            ts: event.ts,
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -160,6 +188,7 @@ fn update_settings(
     state: tauri::State<GameRuntimeState>,
     tracking: tauri::State<TrackingState>,
     calm_mode: tauri::State<CalmModeState>,
+    agent_status_notify: tauri::State<AgentStatusNotifyState>,
 ) -> Result<AppSettings, String> {
     let settings = validate_settings(settings)?;
     let mut runtime = state
@@ -177,6 +206,10 @@ fn update_settings(
     calm_mode
         .0
         .store(runtime.settings.calm_mode, Ordering::SeqCst);
+    agent_status_notify.0.store(
+        runtime.settings.agent_status_notifications_enabled,
+        Ordering::SeqCst,
+    );
     apply_overlay_settings(&app, &runtime.settings);
     let _ = app.emit("settings_changed", runtime.settings.clone());
     Ok(runtime.settings.clone())
@@ -256,6 +289,22 @@ fn clear_openai_api_key() -> Result<(), String> {
 #[tauri::command]
 fn is_autostart_enabled(app: AppHandle) -> Result<bool, String> {
     app.autolaunch().is_enabled().map_err(|err| err.to_string())
+}
+
+/// Task 0017 follow-up: reports whether the `Stop`/`Notification` hooks that
+/// drive the agent-status badge are already present in the user's global
+/// `~/.claude/settings.json`, without writing anything - see
+/// `claude_hooks.rs` and `docs/knowledge/agent-status-notifications.md`.
+#[tauri::command]
+fn agent_status_hook_status() -> Result<claude_hooks::AgentStatusHookStatus, String> {
+    claude_hooks::status()
+}
+
+/// Installs those hooks if they're missing (idempotent - safe to call
+/// repeatedly, e.g. from a dashboard button).
+#[tauri::command]
+fn install_agent_status_hooks() -> Result<claude_hooks::AgentStatusHookInstallResult, String> {
+    claude_hooks::install()
 }
 
 #[tauri::command]
@@ -360,6 +409,20 @@ fn place_furniture(
 }
 
 #[tauri::command]
+fn toggle_furniture_visibility(
+    app: AppHandle,
+    item_id: String,
+    state: tauri::State<GameRuntimeState>,
+) -> Result<PetStatePayload, String> {
+    mutate_pet_state(app, state, |runtime| {
+        runtime
+            .economy
+            .toggle_furniture_visibility(&item_id)
+            .map_err(shop_error_message)
+    })
+}
+
+#[tauri::command]
 fn prestige_pet(
     app: AppHandle,
     state: tauri::State<GameRuntimeState>,
@@ -369,21 +432,6 @@ fn prestige_pet(
             .economy
             .prestige(Local::now().date_naive())
             .map_err(shop_error_message)
-    })
-}
-
-#[tauri::command]
-fn debug_add_sparks(
-    app: AppHandle,
-    amount: u32,
-    state: tauri::State<GameRuntimeState>,
-) -> Result<PetStatePayload, String> {
-    if !cfg!(debug_assertions) {
-        return Err("debug_add_sparks is only available in development builds".to_string());
-    }
-    mutate_pet_state(app, state, |runtime| {
-        runtime.economy.sparks = runtime.economy.sparks.saturating_add(amount);
-        Ok(())
     })
 }
 
@@ -649,6 +697,28 @@ fn usage_sample_from_event(event: &TokenEvent) -> UsagePatternSample {
     UsagePatternSample::single_event(hour, 1)
 }
 
+/// Starts the local agent-status file watcher (task 0017) and forwards each
+/// [`AgentStatusEvent`] as an `agent_status_changed` Tauri event, gated by
+/// `agent_status_notifications_enabled`. Deliberately decoupled from
+/// `GameRuntime`/economy - these are presentation-only reactions and must
+/// never touch fullness/XP/food state, per the task's acceptance criteria.
+fn start_agent_status_notify_watcher(app: AppHandle, enabled: Arc<AtomicBool>) {
+    let (tx, rx) = mpsc::channel::<AgentStatusEvent>();
+    if let Err(err) = start_agent_status_watcher(tx) {
+        eprintln!("failed to start agent status watcher: {err}");
+        return;
+    }
+
+    std::thread::spawn(move || {
+        while let Ok(event) = rx.recv() {
+            if !enabled.load(Ordering::SeqCst) {
+                continue;
+            }
+            let _ = app.emit("agent_status_changed", AgentStatusPayload::from(&event));
+        }
+    });
+}
+
 fn start_claude_code_watcher(
     app: AppHandle,
     shared: Arc<Mutex<GameRuntime>>,
@@ -756,12 +826,16 @@ pub fn run() {
             }));
             let tracking_paused = Arc::new(AtomicBool::new(settings.tracking_paused));
             let calm_mode = Arc::new(AtomicBool::new(settings.calm_mode));
+            let agent_status_notify =
+                Arc::new(AtomicBool::new(settings.agent_status_notifications_enabled));
 
             app.manage(EconomyConfigState(Mutex::new(config)));
             app.manage(GameRuntimeState(shared.clone()));
             app.manage(TrackingState(tracking_paused.clone()));
             app.manage(CalmModeState(calm_mode.clone()));
+            app.manage(AgentStatusNotifyState(agent_status_notify.clone()));
             start_window_geometry_watcher(app.handle().clone(), calm_mode);
+            start_agent_status_notify_watcher(app.handle().clone(), agent_status_notify);
             let settings_shared = shared.clone();
             let persist_tracking_change = Arc::new(move |paused: bool| {
                 let Ok(mut runtime) = settings_shared.lock() else {
@@ -815,8 +889,8 @@ pub fn run() {
             buy_shop_item,
             equip_shop_item,
             place_furniture,
+            toggle_furniture_visibility,
             prestige_pet,
-            debug_add_sparks,
             update_settings,
             complete_onboarding,
             set_tracking_paused,
@@ -824,7 +898,9 @@ pub fn run() {
             set_autostart,
             is_autostart_enabled,
             set_openai_api_key,
-            clear_openai_api_key
+            clear_openai_api_key,
+            agent_status_hook_status,
+            install_agent_status_hooks
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
