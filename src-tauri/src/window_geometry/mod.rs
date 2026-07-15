@@ -29,11 +29,6 @@ pub struct WindowSegment {
     pub y: f64,
 }
 
-/// Windows narrower/shorter than this are excluded (menu extras, tooltips,
-/// popovers) - climbing targets only "real" application windows.
-const MIN_WIDTH: f64 = 120.0;
-const MIN_HEIGHT: f64 = 60.0;
-
 #[cfg(target_os = "macos")]
 pub fn enumerate_windows() -> Vec<WindowSegment> {
     macos::enumerate_windows()
@@ -48,7 +43,7 @@ pub fn enumerate_windows() -> Vec<WindowSegment> {
 
 #[cfg(target_os = "macos")]
 mod macos {
-    use super::{WindowSegment, MIN_HEIGHT, MIN_WIDTH};
+    use super::WindowSegment;
     use core_foundation::base::{CFType, TCFType};
     use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
     use core_foundation::string::CFString;
@@ -57,6 +52,11 @@ mod macos {
         copy_window_info, kCGNullWindowID, kCGWindowBounds, kCGWindowLayer,
         kCGWindowListOptionOnScreenOnly, kCGWindowNumber, kCGWindowOwnerPID,
     };
+
+    /// Windows narrower/shorter than this are excluded (menu extras, tooltips,
+    /// popovers) - climbing targets only "real" application windows.
+    const MIN_WIDTH: f64 = 120.0;
+    const MIN_HEIGHT: f64 = 60.0;
 
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
