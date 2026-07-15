@@ -85,7 +85,7 @@ impl TokenProvider for ClaudeCodeProvider {
         std::thread::Builder::new()
             .name("claude-code-watcher".into())
             .spawn(move || run_watch_loop(root, state_path, tx))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         Ok(())
     }

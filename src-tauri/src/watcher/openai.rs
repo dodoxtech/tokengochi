@@ -66,7 +66,7 @@ impl TokenProvider for OpenAiProvider {
         std::thread::Builder::new()
             .name("openai-usage-poller".into())
             .spawn(move || run_poll_loop(api_key, poll_interval_secs, tx))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         Ok(())
     }
 }
@@ -104,8 +104,7 @@ fn fetch_usage(api_key: &str, start_time: i64, end_time: i64) -> std::io::Result
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        Err(std::io::Error::other(
             String::from_utf8_lossy(&output.stderr).into_owned(),
         ))
     }
@@ -178,10 +177,10 @@ impl Keychain {
             if output.status.success() {
                 return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
             }
-            return Err(std::io::Error::new(
+            Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "keychain item not found",
-            ));
+            ))
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -211,10 +210,7 @@ impl Keychain {
             if status.success() {
                 return Ok(());
             }
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "failed to store keychain item",
-            ));
+            Err(std::io::Error::other("failed to store keychain item"))
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -235,10 +231,10 @@ impl Keychain {
             if status.success() {
                 return Ok(());
             }
-            return Err(std::io::Error::new(
+            Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "keychain item not found",
-            ));
+            ))
         }
         #[cfg(not(target_os = "macos"))]
         {

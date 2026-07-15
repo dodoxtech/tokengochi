@@ -61,7 +61,7 @@ impl TokenProvider for CodexCliProvider {
         std::thread::Builder::new()
             .name("codex-cli-watcher".into())
             .spawn(move || run_poll_loop(root, state_path, tx))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         Ok(())
     }
 }

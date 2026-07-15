@@ -84,7 +84,7 @@ pub struct UsagePatternSample {
 
 impl UsagePatternSample {
     pub fn single_event(hour: u32, provider_count: u32) -> Self {
-        let is_night = hour >= 21 || hour < 6;
+        let is_night = !(6..21).contains(&hour);
         Self {
             night_events: u32::from(is_night),
             session_count: 1,

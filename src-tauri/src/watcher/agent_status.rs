@@ -164,7 +164,7 @@ pub fn start_agent_status_watcher(tx: Sender<AgentStatusEvent>) -> std::io::Resu
     std::thread::Builder::new()
         .name("agent-status-watcher".into())
         .spawn(move || run_watch_loop(events_path, tx))
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
 
     Ok(())
 }

@@ -45,6 +45,20 @@ impl EconomyConfig {
     }
 }
 
+/// Loads `economy.toml`, bundled as a Tauri resource (see `tauri.conf.json`
+/// `bundle.resources`), from the app's resolved resource directory.
+pub fn load_economy_config(app: &tauri::AppHandle) -> Result<EconomyConfig, String> {
+    let path = app
+        .path()
+        .resolve("economy.toml", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("could not resolve economy.toml path: {e}"))?;
+
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("could not read {}: {e}", path.display()))?;
+
+    toml::from_str(&raw).map_err(|e| format!("could not parse economy.toml: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,18 +76,4 @@ mod tests {
         assert!(config.model_weight_default > 0.0);
         assert!(!config.model_weights.is_empty());
     }
-}
-
-/// Loads `economy.toml`, bundled as a Tauri resource (see `tauri.conf.json`
-/// `bundle.resources`), from the app's resolved resource directory.
-pub fn load_economy_config(app: &tauri::AppHandle) -> Result<EconomyConfig, String> {
-    let path = app
-        .path()
-        .resolve("economy.toml", tauri::path::BaseDirectory::Resource)
-        .map_err(|e| format!("could not resolve economy.toml path: {e}"))?;
-
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|e| format!("could not read {}: {e}", path.display()))?;
-
-    toml::from_str(&raw).map_err(|e| format!("could not parse economy.toml: {e}"))
 }

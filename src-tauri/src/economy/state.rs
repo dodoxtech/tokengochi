@@ -499,7 +499,7 @@ impl EconomyState {
         };
         self.sparks += sparks;
 
-        if self.streak_days > 0 && self.streak_days % 7 == 0 {
+        if self.streak_days > 0 && self.streak_days.is_multiple_of(7) {
             self.streak_freezes = (self.streak_freezes + 1).min(2);
         }
     }
