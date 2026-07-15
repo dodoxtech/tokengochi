@@ -54,8 +54,8 @@ mod macos {
     use core_foundation::string::CFString;
     use core_graphics::geometry::CGRect;
     use core_graphics::window::{
-        copy_window_info, kCGNullWindowID, kCGWindowBounds, kCGWindowLayer, kCGWindowListOptionOnScreenOnly,
-        kCGWindowNumber, kCGWindowOwnerPID,
+        copy_window_info, kCGNullWindowID, kCGWindowBounds, kCGWindowLayer,
+        kCGWindowListOptionOnScreenOnly, kCGWindowNumber, kCGWindowOwnerPID,
     };
 
     #[link(name = "CoreGraphics", kind = "framework")]
@@ -118,7 +118,11 @@ mod macos {
                 let front_y0 = front_rect.origin.y;
                 let front_y1 = front_rect.origin.y + front_rect.size.height;
                 if front_y0 <= y && y <= front_y1 {
-                    visible = subtract_interval(visible, front_rect.origin.x, front_rect.origin.x + front_rect.size.width);
+                    visible = subtract_interval(
+                        visible,
+                        front_rect.origin.x,
+                        front_rect.origin.x + front_rect.size.width,
+                    );
                     if visible.is_empty() {
                         break;
                     }
@@ -126,14 +130,19 @@ mod macos {
             }
 
             let full_width = rect.size.width;
-            let unsplit = visible.len() == 1 && (visible[0].1 - visible[0].0 - full_width).abs() < f64::EPSILON;
+            let unsplit = visible.len() == 1
+                && (visible[0].1 - visible[0].0 - full_width).abs() < f64::EPSILON;
 
             for (index, (x0, x1)) in visible.into_iter().enumerate() {
                 if x1 - x0 < MIN_WIDTH {
                     continue;
                 }
                 segments.push(WindowSegment {
-                    id: if unsplit { *id } else { id.wrapping_mul(1000) + index as u32 },
+                    id: if unsplit {
+                        *id
+                    } else {
+                        id.wrapping_mul(1000) + index as u32
+                    },
                     x0,
                     x1,
                     y,
@@ -164,18 +173,27 @@ mod macos {
         result
     }
 
-    fn number_value(dict: &CFDictionary<CFType, CFType>, key: core_foundation::string::CFStringRef) -> Option<i64> {
+    fn number_value(
+        dict: &CFDictionary<CFType, CFType>,
+        key: core_foundation::string::CFStringRef,
+    ) -> Option<i64> {
         let key = unsafe { CFString::wrap_under_get_rule(key) };
         dict.find(key.as_CFType())
             .and_then(|value| value.downcast::<core_foundation::number::CFNumber>())
             .and_then(|number| number.to_i64())
     }
 
-    fn bounds_value(dict: &CFDictionary<CFType, CFType>, key: core_foundation::string::CFStringRef) -> Option<CGRect> {
+    fn bounds_value(
+        dict: &CFDictionary<CFType, CFType>,
+        key: core_foundation::string::CFStringRef,
+    ) -> Option<CGRect> {
         let key = unsafe { CFString::wrap_under_get_rule(key) };
         let value = dict.find(key.as_CFType())?;
         let bounds_dict_ref = value.as_concrete_TypeRef().cast() as CFDictionaryRef;
-        let mut rect = CGRect::new(&core_graphics::geometry::CGPoint::new(0.0, 0.0), &core_graphics::geometry::CGSize::new(0.0, 0.0));
+        let mut rect = CGRect::new(
+            &core_graphics::geometry::CGPoint::new(0.0, 0.0),
+            &core_graphics::geometry::CGSize::new(0.0, 0.0),
+        );
         let ok = unsafe { CGRectMakeWithDictionaryRepresentation(bounds_dict_ref, &mut rect) };
         if ok == 0 {
             None

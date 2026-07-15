@@ -127,7 +127,10 @@ fn tail(file: &Path, state: &mut WatcherState, tx: &Sender<AgentStatusEvent>) {
     let (lines, new_offset) = match read_new_lines(file, state.offset) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("agent_status watcher: failed to read {}: {e}", file.display());
+            eprintln!(
+                "agent_status watcher: failed to read {}: {e}",
+                file.display()
+            );
             return;
         }
     };
@@ -229,7 +232,8 @@ mod tests {
 
     #[test]
     fn parses_needs_approval_event() {
-        let line = r#"{"provider":"claude_code","session_id":"abc123","status":"needs_approval","ts":1}"#;
+        let line =
+            r#"{"provider":"claude_code","session_id":"abc123","status":"needs_approval","ts":1}"#;
         let event = parse_status_line(line).expect("should parse");
         assert_eq!(event.status, AgentStatus::NeedsApproval);
     }
@@ -283,11 +287,18 @@ mod tests {
         let (tx2, rx2) = std::sync::mpsc::channel();
         tail(&file, &mut restarted_state, &tx2);
         let restart_events: Vec<_> = rx2.try_iter().collect();
-        assert_eq!(restart_events.len(), 0, "restart must not double-count already-seen lines");
+        assert_eq!(
+            restart_events.len(),
+            0,
+            "restart must not double-count already-seen lines"
+        );
 
         // A genuinely new line appended after restart is picked up.
         use std::io::Write;
-        let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&file)
+            .unwrap();
         writeln!(
             f,
             "{{\"provider\":\"claude_code\",\"session_id\":\"s1\",\"status\":\"needs_approval\",\"ts\":2}}"

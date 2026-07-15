@@ -61,8 +61,12 @@ fn hook_script_path() -> Result<PathBuf, String> {
         .join("resources")
         .join("claude-hooks")
         .join("tokengochi-notify.sh");
-    path.canonicalize()
-        .map_err(|err| format!("could not resolve hook script path {}: {err}", path.display()))
+    path.canonicalize().map_err(|err| {
+        format!(
+            "could not resolve hook script path {}: {err}",
+            path.display()
+        )
+    })
 }
 
 fn read_settings(path: &Path) -> Result<Map<String, Value>, String> {
@@ -92,8 +96,12 @@ fn write_settings_atomically(path: &Path, root: &Map<String, Value>) -> Result<(
     }
     if path.exists() {
         let backup_path = format!("{}.bak", path.display());
-        fs::copy(path, &backup_path)
-            .map_err(|err| format!("could not back up {} to {backup_path}: {err}", path.display()))?;
+        fs::copy(path, &backup_path).map_err(|err| {
+            format!(
+                "could not back up {} to {backup_path}: {err}",
+                path.display()
+            )
+        })?;
     }
     let pretty = serde_json::to_string_pretty(&Value::Object(root.clone()))
         .map_err(|err| format!("could not serialize {}: {err}", path.display()))?;
@@ -205,9 +213,7 @@ pub fn install() -> Result<AgentStatusHookInstallResult, String> {
     let script_path = hook_script_path()?;
     let mut root = read_settings(&settings_path)?;
 
-    let hooks = root
-        .entry("hooks".to_string())
-        .or_insert_with(|| json!({}));
+    let hooks = root.entry("hooks".to_string()).or_insert_with(|| json!({}));
     if !hooks.is_object() {
         return Err(format!(
             "{}: top-level \"hooks\" is not an object",
@@ -286,7 +292,9 @@ mod tests {
         let hooks = root.entry("hooks".to_string()).or_insert_with(|| json!({}));
         let hooks_obj = hooks.as_object_mut().unwrap();
         for (event, status_arg) in MANAGED_HOOKS {
-            let entry = hooks_obj.entry(event.to_string()).or_insert_with(|| json!([]));
+            let entry = hooks_obj
+                .entry(event.to_string())
+                .or_insert_with(|| json!([]));
             append_hook_entry(entry, hook_command(&script_path, status_arg)).unwrap();
         }
         write_settings_atomically(&settings_path, &root).unwrap();
@@ -294,7 +302,10 @@ mod tests {
         let reloaded = read_settings(&settings_path).unwrap();
         let hooks_obj = reloaded.get("hooks").unwrap().as_object().unwrap();
         for (event, _) in MANAGED_HOOKS {
-            assert!(has_managed_entry(hooks_obj.get(event).unwrap()), "{event} should be managed");
+            assert!(
+                has_managed_entry(hooks_obj.get(event).unwrap()),
+                "{event} should be managed"
+            );
         }
         // A pre-existing PostToolUse entry the user added by hand for
         // something else must survive alongside ours (this test starts
@@ -361,7 +372,10 @@ mod tests {
         assert!(changed);
         assert!(!has_managed_entry(hooks_obj.get("Notification").unwrap()));
         for (event, _) in MANAGED_HOOKS {
-            assert!(has_managed_entry(hooks_obj.get(event).unwrap()), "{event} should be managed");
+            assert!(
+                has_managed_entry(hooks_obj.get(event).unwrap()),
+                "{event} should be managed"
+            );
         }
     }
 }

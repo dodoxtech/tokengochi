@@ -538,7 +538,10 @@ fn migrate_app_settings_columns(conn: &Connection) -> rusqlite::Result<()> {
         ("codex_cli_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("openai_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("calm_mode", "INTEGER NOT NULL DEFAULT 0"),
-        ("agent_status_notifications_enabled", "INTEGER NOT NULL DEFAULT 1"),
+        (
+            "agent_status_notifications_enabled",
+            "INTEGER NOT NULL DEFAULT 1",
+        ),
     ];
 
     for (name, definition) in columns {
