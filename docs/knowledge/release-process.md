@@ -68,7 +68,17 @@ openssl base64 -A -in /path/to/developer-id-application.p12 -out developer-id-ap
 openssl base64 -A -in /path/to/AuthKey_<KEYID>.p8 -out AuthKey_<KEYID>.p8.base64
 ```
 
-The release workflow imports the `.p12` into a temporary macOS runner keychain, writes the App Store Connect API key into `$RUNNER_TEMP`, and passes Tauri's macOS signing/notarization environment variables to `tauri-apps/tauri-action`.
+The release workflow imports the `.p12` into a temporary macOS runner keychain, writes the App Store Connect API key into `$RUNNER_TEMP`, builds signed macOS artifacts, and then runs `xcrun notarytool` directly. The workflow submits the final `.dmg` without an indefinite wait, prints the Apple submission id, polls for up to 45 minutes, prints each status transition, fetches the full Apple notarization log automatically when the status is `Invalid`, and fails with the submission id when polling times out.
+
+Expected GitHub Actions notarization log shape:
+
+```text
+Notarization submission id: 2f388aec-8a5e-4502-9c3a-0da4ec97e4cb
+Status: In Progress
+Status: Accepted
+```
+
+If Apple returns `Invalid`, the job prints `Status: Invalid` followed by the full `notarytool log` JSON. If Apple leaves the submission in progress for the whole polling window, the job fails after 45 minutes and prints the submission id so it can be inspected manually with `xcrun notarytool info` or `xcrun notarytool log`.
 
 Mac release checks:
 

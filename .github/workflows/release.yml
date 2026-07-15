@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -14,10 +17,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: "--target aarch64-apple-darwin"
-          - platform: macos-latest
-            args: "--target x86_64-apple-darwin"
           - platform: ubuntu-22.04
             args: ""
           - platform: windows-latest
@@ -40,8 +39,61 @@ jobs:
             libgtk-3-dev
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            ui/dashboard/package-lock.json
+            ui/overlay/package-lock.json
+
+      - name: Install frontend dependencies
+        run: |
+          npm ci --prefix ui/dashboard
+          npm ci --prefix ui/overlay
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater artifact signing (latest.json + .sig). See docs/tasks/active/0008-packaging-ci-updater.md
+          # for how to generate/rotate this keypair. NOT the same as OS code signing (see ADR-0004).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: src-tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: "Tokengochi ${{ github.ref_name }}"
+          releaseBody: "See CHANGELOG.md for details."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  release-macos:
+    name: release-macos (${{ matrix.name }})
+    runs-on: macos-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: apple-silicon
+            target: aarch64-apple-darwin
+            args: "--target aarch64-apple-darwin"
+          - name: intel
+            target: x86_64-apple-darwin
+            args: "--target x86_64-apple-darwin"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -61,7 +113,6 @@ jobs:
           npm ci --prefix ui/overlay
 
       - name: Prepare macOS Developer ID signing
-        if: matrix.platform == 'macos-latest'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -109,28 +160,150 @@ jobs:
 
           echo "APPLE_SIGNING_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
           echo "APPLE_API_KEY_PATH=$private_key_path" >> "$GITHUB_ENV"
-          echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
 
-      - name: Build and publish release
-        uses: tauri-apps/tauri-action@v0
+      - name: Build signed macOS app and DMG
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Updater artifact signing (latest.json + .sig). See docs/tasks/active/0008-packaging-ci-updater.md
-          # for how to generate/rotate this keypair. NOT the same as OS code signing (see ADR-0004).
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          # Updater artifact signing (latest.json + .sig). See docs/tasks/active/0008-packaging-ci-updater.md.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS Developer ID signing + Apple notarization. These are consumed by Tauri only on macOS.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+        run: |
+          npm --prefix ui/dashboard exec tauri -- build ${{ matrix.args }}
+
+      - name: Locate macOS artifacts
+        run: |
+          bundle_root="src-tauri/target/${{ matrix.target }}/release/bundle"
+          app_path="$bundle_root/macos/tokengochi.app"
+          dmg_path="$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' | head -n 1)"
+
+          if [ ! -d "$app_path" ]; then
+            echo "::error::Built app was not found at $app_path."
+            find "$bundle_root" -maxdepth 4 -print
+            exit 1
+          fi
+
+          if [ -z "$dmg_path" ] || [ ! -f "$dmg_path" ]; then
+            echo "::error::Built DMG was not found under $bundle_root/dmg."
+            find "$bundle_root" -maxdepth 4 -print
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+
+          echo "MACOS_APP_PATH=$app_path" >> "$GITHUB_ENV"
+          echo "MACOS_DMG_PATH=$dmg_path" >> "$GITHUB_ENV"
+          echo "Located app: $app_path"
+          echo "Located DMG: $dmg_path"
+
+      - name: Submit and poll Apple notarization
+        env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
-          APPLE_API_ISSUER: ${{ env.APPLE_API_ISSUER }}
-        with:
-          projectPath: src-tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: "Tokengochi ${{ github.ref_name }}"
-          releaseBody: "See CHANGELOG.md for details."
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          MACOS_DMG_PATH: ${{ env.MACOS_DMG_PATH }}
+        run: |
+          set -euo pipefail
+
+          submit_json="$RUNNER_TEMP/notary-submit-${{ matrix.target }}.json"
+          info_json="$RUNNER_TEMP/notary-info-${{ matrix.target }}.json"
+          log_json="$RUNNER_TEMP/notary-log-${{ matrix.target }}.json"
+
+          echo "Submitting notarization for $MACOS_DMG_PATH"
+          xcrun notarytool submit "$MACOS_DMG_PATH" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" \
+            --no-progress \
+            --output-format json > "$submit_json"
+
+          submission_id="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["id"])' "$submit_json")"
+
+          if [ -z "$submission_id" ]; then
+            echo "::error::Apple notarization did not return a submission id."
+            cat "$submit_json"
+            exit 1
+          fi
+
+          echo "Notarization submission id: $submission_id"
+          echo "NOTARIZATION_SUBMISSION_ID=$submission_id" >> "$GITHUB_ENV"
+
+          deadline=$((SECONDS + 2700))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            xcrun notarytool info "$submission_id" \
+              --key "$APPLE_API_KEY_PATH" \
+              --key-id "$APPLE_API_KEY" \
+              --issuer "$APPLE_API_ISSUER" \
+              --output-format json > "$info_json"
+
+            status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$info_json")"
+            echo "Status: $status"
+
+            if [ "$status" = "Accepted" ]; then
+              exit 0
+            fi
+
+            if [ "$status" = "Invalid" ]; then
+              echo "::error::Apple notarization failed with status Invalid. Submission id: $submission_id"
+              xcrun notarytool log "$submission_id" \
+                --key "$APPLE_API_KEY_PATH" \
+                --key-id "$APPLE_API_KEY" \
+                --issuer "$APPLE_API_ISSUER" \
+                "$log_json" || true
+
+              if [ -f "$log_json" ]; then
+                cat "$log_json"
+              fi
+
+              exit 1
+            fi
+
+            sleep 60
+          done
+
+          echo "::error::Apple notarization timed out after 45 minutes. Submission id: $submission_id"
+          cat "$info_json"
+          exit 1
+
+      - name: Staple notarization ticket
+        env:
+          MACOS_DMG_PATH: ${{ env.MACOS_DMG_PATH }}
+        run: |
+          xcrun stapler staple "$MACOS_DMG_PATH"
+          xcrun stapler validate "$MACOS_DMG_PATH"
+          spctl --assess --type install --verbose "$MACOS_DMG_PATH"
+
+      - name: Upload macOS release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          bundle_root="src-tauri/target/${{ matrix.target }}/release/bundle"
+          release_assets=()
+          while IFS= read -r asset; do
+            release_assets+=("$asset")
+          done < <(find "$bundle_root" -type f \( \
+            -name '*.dmg' \
+            -o -name '*.app.tar.gz' \
+            -o -name '*.app.tar.gz.sig' \
+            -o -name 'latest.json' \
+          \) -print)
+
+          if [ "${#release_assets[@]}" -eq 0 ]; then
+            echo "::error::No macOS release assets were found under $bundle_root."
+            find "$bundle_root" -maxdepth 4 -print
+            exit 1
+          fi
+
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null; then
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --title "Tokengochi $GITHUB_REF_NAME" \
+              --notes "See CHANGELOG.md for details." || \
+              gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null
+          fi
+
+          printf 'Uploading macOS assets:\n'
+          printf ' - %s\n' "${release_assets[@]}"
+          gh release upload "$GITHUB_REF_NAME" "${release_assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"

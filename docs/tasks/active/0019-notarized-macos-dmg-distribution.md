@@ -83,14 +83,14 @@ Out of scope:
 ## Risks
 
 - Apple certificate/private key handling is sensitive; never commit `.p12`, private keys, API keys, or passwords.
-- Tauri's built-in macOS signing/notarization support may require exact config/env var names; verify against the installed Tauri version before implementation.
+- Tauri's built-in macOS notarization support can hide the Apple submission id while waiting; keep notarization explicit in GitHub Actions so failures and timeouts are diagnosable.
 - macOS notarization can fail on entitlements, hardened runtime, nested binaries, or unsigned helper files.
 - Cross-arch builds may need separate validation because the release workflow builds both `aarch64-apple-darwin` and `x86_64-apple-darwin`.
 
 ## Implementation Notes
 
 - Start by reading current Tauri v2 signing/bundling docs for macOS and checking `src-tauri/tauri.conf.json`.
-- Prefer the official `tauri-apps/tauri-action` signing/notarization path if it supports this project's needs; otherwise add explicit `xcrun notarytool` and `xcrun stapler` steps.
+- Keep macOS notarization as explicit `xcrun notarytool` and `xcrun stapler` steps so GitHub Actions prints submission ids, status polling, timeout details, and Apple error logs.
 - Expected secret inputs may include a base64-encoded `.p12`, certificate password, Apple issuer/key IDs, API private key, team ID, and signing identity. Confirm names during implementation instead of guessing.
 - Use `spctl --assess --type open --context context:primary-signature --verbose <artifact>` and `codesign --verify --deep --strict --verbose=2 Tokengochi.app` as local verification where practical.
 - After the first notarized tag, test by downloading the GitHub Release asset rather than using the local build artifact, so quarantine/Gatekeeper behavior matches a real user install.
@@ -160,6 +160,20 @@ Verification:
 - `npm --prefix ui/overlay run check` passes.
 - `cargo test --manifest-path src-tauri/Cargo.toml` passes: 59 tests.
 - `git diff --check` passes.
+
+### 2026-07-15 — explicit notarization logging
+
+The first notarized `v0.2.2` run showed that Tauri's built-in notarization wait can leave the macOS arm64 job stuck at `Notarizing ...tokengochi.app` without printing the Apple submission id. Apple history showed old submissions remaining `In Progress`, while one x64 submission was `Accepted`, so the workflow needed clearer diagnostics and a bounded wait.
+
+Updated `.github/workflows/release.yml` again:
+
+- Split macOS into a dedicated `release-macos` job and left Linux/Windows on `tauri-apps/tauri-action`.
+- macOS now builds signed artifacts first, without passing Apple API notarization env vars into Tauri.
+- The workflow submits the final `.dmg` with `xcrun notarytool submit --output-format json`, prints `Notarization submission id: ...`, and polls `xcrun notarytool info` for up to 45 minutes.
+- If Apple returns `Invalid`, the workflow runs `xcrun notarytool log <submission-id>` and prints the full JSON log before failing.
+- If Apple stays `In Progress` past the polling window, the workflow fails clearly with the submission id.
+- If Apple returns `Accepted`, the workflow staples and validates the `.dmg`, then uploads macOS assets to the draft GitHub Release.
+- Updated `ui/dashboard/package.json` so `npm --prefix ui/dashboard run build` runs `svelte-kit sync` before `vite build`, removing the `.svelte-kit/tsconfig.json` warning.
 
 ## Completion Notes
 
