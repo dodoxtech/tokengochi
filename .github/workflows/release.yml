@@ -60,6 +60,57 @@ jobs:
           npm ci --prefix ui/dashboard
           npm ci --prefix ui/overlay
 
+      - name: Prepare macOS Developer ID signing
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ]; then
+            echo "::error::Missing APPLE_CERTIFICATE or APPLE_CERTIFICATE_PASSWORD secrets for macOS Developer ID signing."
+            exit 1
+          fi
+
+          if [ -z "$APPLE_API_PRIVATE_KEY" ] || [ -z "$APPLE_API_KEY" ] || [ -z "$APPLE_API_ISSUER" ]; then
+            echo "::error::Missing APPLE_API_PRIVATE_KEY, APPLE_API_KEY, or APPLE_API_ISSUER secrets for macOS notarization."
+            exit 1
+          fi
+
+          certificate_path="$RUNNER_TEMP/developer-id-certificate.p12"
+          keychain_path="$RUNNER_TEMP/tokengochi-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          private_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+
+          printf '%s' "$APPLE_CERTIFICATE" | base64 -D > "$certificate_path"
+          printf '%s' "$APPLE_API_PRIVATE_KEY" | base64 -D > "$private_key_path"
+
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security default-keychain -s "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security import "$certificate_path" -k "$keychain_path" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path"
+
+          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            signing_identity="$APPLE_SIGNING_IDENTITY"
+          else
+            signing_identity="$(security find-identity -v -p codesigning "$keychain_path" | awk -F'"' '/Developer ID Application/ { print $2; exit }')"
+          fi
+
+          if [ -z "$signing_identity" ]; then
+            echo "::error::No Developer ID Application signing identity found in imported certificate."
+            security find-identity -v -p codesigning "$keychain_path"
+            exit 1
+          fi
+
+          echo "APPLE_SIGNING_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_PATH=$private_key_path" >> "$GITHUB_ENV"
+          echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
+
       - name: Build and publish release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -68,6 +119,13 @@ jobs:
           # for how to generate/rotate this keypair. NOT the same as OS code signing (see ADR-0004).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS Developer ID signing + Apple notarization. These are consumed by Tauri only on macOS.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+          APPLE_API_ISSUER: ${{ env.APPLE_API_ISSUER }}
         with:
           projectPath: src-tauri
           tagName: ${{ github.ref_name }}

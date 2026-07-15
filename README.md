@@ -33,9 +33,10 @@ Download the installer for your OS from the [latest release](https://github.com/
 | Linux (Debian/Ubuntu) | `tokengochi_x.y.z_amd64.deb` |
 | Linux (other distros) | `tokengochi_x.y.z_amd64.AppImage` |
 
-> **These builds are unsigned for the MVP release** (see [ADR-0004](docs/decisions/0004-unsigned-mvp-release.md)). Your OS will warn you before first launch — this is expected:
+> **macOS releases are signed with Developer ID and notarized** once the signing secrets are configured (see [ADR-0007](docs/decisions/0007-macos-developer-id-distribution.md)), so the downloaded `.dmg` should open normally. Older unsigned MVP builds may still show Gatekeeper warnings.
 >
-> - **macOS:** Gatekeeper blocks the app ("cannot be opened because the developer cannot be verified"). Right-click the app → **Open** → **Open** again in the dialog. If that doesn't work, run `xattr -dr com.apple.quarantine /Applications/Tokengochi.app` in Terminal.
+> **Windows builds are still unsigned** (see [ADR-0004](docs/decisions/0004-unsigned-mvp-release.md)). SmartScreen may warn before first launch:
+>
 > - **Windows:** SmartScreen shows "Windows protected your PC". Click **More info** → **Run anyway**.
 > - **Linux:** no OS-level warning; mark the AppImage executable (`chmod +x`) before running it.
 

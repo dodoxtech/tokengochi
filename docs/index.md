@@ -39,6 +39,7 @@ This is the main Obsidian map of content for the project.
 - [[decisions/0001-tauri-stack|ADR-0001 Tauri Stack]]
 - [[decisions/0002-token-source-local-logs|ADR-0002 Token Source]]
 - [[decisions/0003-canvas-sprite-rendering|ADR-0003 Sprite Rendering]]
+- [[decisions/0007-macos-developer-id-distribution|ADR-0007 macOS Developer ID Distribution]]
 
 ## Templates
 

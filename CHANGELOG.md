@@ -4,6 +4,14 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-15
+
+### Added
+
+- macOS Developer ID signing and Apple notarization path for direct `.dmg` distribution outside the Mac App Store.
+- Release documentation for Apple signing/notarization GitHub Actions secrets and clean-machine Gatekeeper verification.
+- ADR-0007 documenting macOS Developer ID distribution while leaving Windows code signing as a separate follow-up.
+
 ## [0.2.1] - 2026-07-14
 
 ### Added

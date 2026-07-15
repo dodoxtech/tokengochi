@@ -29,7 +29,7 @@ Three files must carry the same version number:
 2. Bump the version in the three files listed above to `X.Y.Z`.
 3. Commit: `git commit -m "release: vX.Y.Z"`.
 4. Tag and push: `git tag vX.Y.Z && git push origin main --tags`.
-5. [.github/workflows/release.yml](../../.github/workflows/release.yml) triggers on the tag push, builds installers for macOS (arm64 + x86_64), Windows, and Linux, signs the updater artifacts, and publishes a **draft** GitHub Release with `latest.json` attached.
+5. [.github/workflows/release.yml](../../.github/workflows/release.yml) triggers on the tag push, builds installers for macOS (arm64 + x86_64), Windows, and Linux, signs the updater artifacts, signs/notarizes macOS DMGs with Developer ID, and publishes a **draft** GitHub Release with `latest.json` attached.
 6. Review the draft release (binaries, changelog body), then publish it manually. `tauri-plugin-updater` polls the `latest` release's `latest.json`, so unpublished drafts are invisible to existing installs — this is the safety gate before a release goes live.
 7. Verify auto-update: install the previous tagged build, launch it, click "Check for updates" in the dashboard settings panel, confirm it downloads and the "Restart now" button relaunches into the new version with pet state intact.
 
@@ -45,6 +45,41 @@ cargo tauri signer generate -w /path/to/tokengochi-updater.key
 - The **private key** and its password are stored as GitHub Actions repository secrets (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) — never commit the private key file.
 - If the private key is ever lost or rotated, existing installs cannot verify new updates until they're manually reinstalled with a build carrying the new pubkey.
 
-## Unsigned OS builds (MVP)
+## macOS Developer ID signing and notarization
 
-Per [[../decisions/0004-unsigned-mvp-release|ADR-0004]], macOS and Windows builds are not notarized/code-signed yet. Users will see Gatekeeper/SmartScreen warnings on first install — documented in the root [README](../../README.md#installing).
+Per [[../decisions/0007-macos-developer-id-distribution|ADR-0007]], macOS release builds are signed with a Developer ID Application certificate and notarized by Apple so users can install the `.dmg` outside the Mac App Store without the unsigned Gatekeeper workaround.
+
+Required GitHub Actions repository secrets:
+
+- `APPLE_CERTIFICATE` — base64-encoded `.p12` export of the Developer ID Application certificate and private key.
+- `APPLE_CERTIFICATE_PASSWORD` — password used when exporting the `.p12`.
+- `APPLE_SIGNING_IDENTITY` — optional explicit identity, for example `Developer ID Application: Example LLC (TEAMID)`. If omitted, CI picks the first imported `Developer ID Application` identity.
+- `APPLE_API_KEY` — App Store Connect API Key ID.
+- `APPLE_API_ISSUER` — App Store Connect API Issuer ID.
+- `APPLE_API_PRIVATE_KEY` — base64-encoded contents of the downloaded `AuthKey_<KEYID>.p8` private key.
+
+Prepare the secrets on a trusted Mac:
+
+```sh
+# Export this from Keychain Access as a password-protected .p12 first.
+openssl base64 -A -in /path/to/developer-id-application.p12 -out developer-id-application.p12.base64
+
+# Download AuthKey_<KEYID>.p8 from App Store Connect > Users and Access > Integrations.
+openssl base64 -A -in /path/to/AuthKey_<KEYID>.p8 -out AuthKey_<KEYID>.p8.base64
+```
+
+The release workflow imports the `.p12` into a temporary macOS runner keychain, writes the App Store Connect API key into `$RUNNER_TEMP`, and passes Tauri's macOS signing/notarization environment variables to `tauri-apps/tauri-action`.
+
+Mac release checks:
+
+```sh
+codesign --verify --deep --strict --verbose=2 /Applications/Tokengochi.app
+spctl --assess --type open --context context:primary-signature --verbose /Applications/Tokengochi.app
+spctl --assess --type install --verbose /path/to/Tokengochi_x.y.z_aarch64.dmg
+```
+
+For the final Gatekeeper check, download the `.dmg` from the published GitHub Release in Safari or Chrome, drag Tokengochi into `/Applications`, and launch it from Finder. This preserves quarantine metadata and matches the real user path.
+
+## Unsigned Windows builds
+
+Per [[../decisions/0004-unsigned-mvp-release|ADR-0004]], Windows builds are still unsigned. Users will see a SmartScreen warning on first install until a Windows code-signing certificate is added.

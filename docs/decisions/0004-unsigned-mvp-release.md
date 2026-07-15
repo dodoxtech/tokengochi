@@ -15,6 +15,8 @@ tags:
 
 Accepted
 
+Superseded for macOS by [[0007-macos-developer-id-distribution|ADR-0007]]. Still applies to Windows until Windows code signing is configured.
+
 ## Date
 
 2026-07-12
