@@ -92,4 +92,4 @@ jobs:
 
       - name: cargo tauri build
         working-directory: src-tauri
-        run: cargo tauri build --ci
+        run: cargo tauri build --ci --config tauri.ci.conf.json

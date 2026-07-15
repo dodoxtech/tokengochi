@@ -45,6 +45,21 @@ cargo tauri signer generate -w /path/to/tokengochi-updater.key
 - The **private key** and its password are stored as GitHub Actions repository secrets (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) — never commit the private key file.
 - If the private key is ever lost or rotated, existing installs cannot verify new updates until they're manually reinstalled with a build carrying the new pubkey.
 
+This updater keypair is separate from Apple Developer ID signing. A release build with `bundle.createUpdaterArtifacts: true` requires `TAURI_SIGNING_PRIVATE_KEY` whenever Tauri creates updater artifacts, even if all Apple notarization secrets are present. For local or CI smoke builds that do not publish updater artifacts, use the CI config overlay:
+
+```sh
+cd src-tauri
+cargo tauri build --ci --config tauri.ci.conf.json
+```
+
+For an actual release build, set both updater signing env vars:
+
+```sh
+export TAURI_SIGNING_PRIVATE_KEY="$(cat /path/to/tokengochi-updater.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+cargo tauri build --ci
+```
+
 ## macOS Developer ID signing and notarization
 
 Per [[../decisions/0007-macos-developer-id-distribution|ADR-0007]], macOS release builds are signed with a Developer ID Application certificate and notarized by Apple so users can install the `.dmg` outside the Mac App Store without the unsigned Gatekeeper workaround.
