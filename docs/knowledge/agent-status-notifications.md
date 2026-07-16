@@ -67,9 +67,10 @@ already proven by the token watcher):
 
 1. A hook script (`resources/claude-hooks/tokengochi-notify.sh`) appends one
    JSON line per event to
-   `<data_dir>/tokengochi/agent_status_events.jsonl` - the same base
-   directory (`dirs::data_dir()/tokengochi/`) the token watcher uses for its
-   own state file. Each line: `{"provider":"claude_code","session_id":"...",
+   `<data_dir>/<watcher_namespace>/agent_status_events.jsonl` - the same base
+   directory the token watcher uses for its own state file. The watcher
+   namespace is `tokengochi` in release builds and `tokengochi-dev` in
+   debug/dev builds. Each line: `{"provider":"claude_code","session_id":"...",
    "status":"completed"|"needs_approval"|"resolved","ts":<unix_seconds>}`. Only the
    session id is read from the hook's stdin JSON - never message content,
    per the privacy rule in [[token-tracking|Token Tracking]].
@@ -169,11 +170,12 @@ whether they want it for one project or every session):
 }
 ```
 
-The script auto-detects the OS data directory (macOS `~/Library/Application
-Support/tokengochi`, Linux `$XDG_DATA_HOME/tokengochi` or
-`~/.local/share/tokengochi`) unless `TOKENGOCHI_DATA_DIR` is set - keep this
-in sync with `agent_status_events_path()` in
-`src-tauri/src/watcher/agent_status.rs` if either side changes.
+The script auto-detects the production OS data directory (macOS
+`~/Library/Application Support/tokengochi`, Linux `$XDG_DATA_HOME/tokengochi`
+or `~/.local/share/tokengochi`) unless `TOKENGOCHI_DATA_DIR` is set. The app's
+hook installer sets `TOKENGOCHI_DATA_DIR` explicitly so debug/dev builds write
+to `tokengochi-dev` while release builds write to `tokengochi`; keep this in
+sync with `storage_paths::watcher_data_file()` if either side changes.
 
 ## Open Questions / Follow-ups
 

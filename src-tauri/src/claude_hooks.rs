@@ -11,6 +11,7 @@
 //! than per-project: the point of the feature is "the pet should react
 //! whenever I use Claude Code anywhere," not just inside this repo.
 
+use crate::storage_paths;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::fs;
@@ -116,29 +117,60 @@ fn write_settings_atomically(path: &Path, root: &Map<String, Value>) -> Result<(
 /// True if any entry under a hook event array (`hooks.Stop`/`hooks.Notification`,
 /// each an array of `{ "hooks": [ { "type", "command" } ] }` groups per the
 /// Claude Code hooks schema) already runs our script.
-fn has_managed_entry(event_entries: &Value) -> bool {
+fn managed_commands(event_entries: &Value) -> Vec<&str> {
     event_entries
         .as_array()
         .map(|entries| {
-            entries.iter().any(|entry| {
-                entry
-                    .get("hooks")
-                    .and_then(Value::as_array)
-                    .map(|inner| {
-                        inner.iter().any(|hook| {
-                            hook.get("command")
-                                .and_then(Value::as_str)
-                                .is_some_and(|command| command.contains(HOOK_MARKER))
-                        })
-                    })
-                    .unwrap_or(false)
+            entries
+                .iter()
+                .flat_map(|entry| {
+                    entry
+                        .get("hooks")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                })
+                .filter_map(|hook| hook.get("command").and_then(Value::as_str))
+                .filter(|command| command.contains(HOOK_MARKER))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn has_only_desired_managed_entry(event_entries: &Value, desired_command: &str) -> bool {
+    let commands = managed_commands(event_entries);
+    commands.len() == 1 && commands[0] == desired_command
+}
+
+fn hook_group_has_managed_entry(entry: &Value) -> bool {
+    entry
+        .get("hooks")
+        .and_then(Value::as_array)
+        .map(|inner| {
+            inner.iter().any(|hook| {
+                hook.get("command")
+                    .and_then(Value::as_str)
+                    .is_some_and(|command| command.contains(HOOK_MARKER))
             })
         })
         .unwrap_or(false)
 }
 
+fn shell_quote(raw: &str) -> String {
+    format!("'{}'", raw.replace('\'', "'\\''"))
+}
+
 fn hook_command(script_path: &Path, status: &str) -> String {
-    format!("\"{}\" {status} {MANAGED_FLAG}", script_path.display())
+    let events_path = storage_paths::watcher_data_file("agent_status_events.jsonl");
+    let data_dir = events_path
+        .parent()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| ".".to_string());
+    format!(
+        "TOKENGOCHI_DATA_DIR={} {} {status} {MANAGED_FLAG}",
+        shell_quote(&data_dir),
+        shell_quote(&script_path.to_string_lossy())
+    )
 }
 
 fn append_hook_entry(event_entries: &mut Value, command: String) -> Result<(), String> {
@@ -162,19 +194,7 @@ fn remove_managed_entries(event_entries: &mut Value) -> bool {
         return false;
     };
     let before = array.len();
-    array.retain(|entry| {
-        !entry
-            .get("hooks")
-            .and_then(Value::as_array)
-            .map(|inner| {
-                inner.iter().any(|hook| {
-                    hook.get("command")
-                        .and_then(Value::as_str)
-                        .is_some_and(|command| command.contains(HOOK_MARKER))
-                })
-            })
-            .unwrap_or(false)
-    });
+    array.retain(|entry| !hook_group_has_managed_entry(entry));
     array.len() != before
 }
 
@@ -192,14 +212,18 @@ const MANAGED_HOOKS: [(&str, &str); 4] = [
 
 pub fn status() -> Result<AgentStatusHookStatus, String> {
     let settings_path = claude_global_settings_path()?;
+    let script_path = hook_script_path()?;
     let root = read_settings(&settings_path)?;
     let installed = root
         .get("hooks")
         .and_then(Value::as_object)
         .map(|hooks| {
-            MANAGED_HOOKS
-                .iter()
-                .all(|(event, _)| hooks.get(*event).is_some_and(has_managed_entry))
+            MANAGED_HOOKS.iter().all(|(event, status_arg)| {
+                let desired_command = hook_command(&script_path, status_arg);
+                hooks
+                    .get(*event)
+                    .is_some_and(|entry| has_only_desired_managed_entry(entry, &desired_command))
+            })
         })
         .unwrap_or(false);
     Ok(AgentStatusHookStatus {
@@ -246,8 +270,10 @@ pub fn install() -> Result<AgentStatusHookInstallResult, String> {
                 settings_path.display()
             ));
         }
-        if !has_managed_entry(entry) {
-            append_hook_entry(entry, hook_command(&script_path, status_arg))?;
+        let desired_command = hook_command(&script_path, status_arg);
+        if !has_only_desired_managed_entry(entry, &desired_command) {
+            remove_managed_entries(entry);
+            append_hook_entry(entry, desired_command)?;
             changed = true;
         }
     }
@@ -301,9 +327,10 @@ mod tests {
 
         let reloaded = read_settings(&settings_path).unwrap();
         let hooks_obj = reloaded.get("hooks").unwrap().as_object().unwrap();
-        for (event, _) in MANAGED_HOOKS {
+        for (event, status_arg) in MANAGED_HOOKS {
+            let desired_command = hook_command(&script_path, status_arg);
             assert!(
-                has_managed_entry(hooks_obj.get(event).unwrap()),
+                has_only_desired_managed_entry(hooks_obj.get(event).unwrap(), &desired_command),
                 "{event} should be managed"
             );
         }
@@ -320,10 +347,12 @@ mod tests {
         let mut root2 = read_settings(&settings_path).unwrap();
         let hooks2 = root2.get_mut("hooks").unwrap().as_object_mut().unwrap();
         let mut changed_again = false;
-        for (event, _) in MANAGED_HOOKS {
+        for (event, status_arg) in MANAGED_HOOKS {
             let entry = hooks2.get_mut(event).unwrap();
-            if !has_managed_entry(entry) {
-                append_hook_entry(entry, hook_command(&script_path, "completed")).unwrap();
+            let desired_command = hook_command(&script_path, status_arg);
+            if !has_only_desired_managed_entry(entry, &desired_command) {
+                remove_managed_entries(entry);
+                append_hook_entry(entry, desired_command).unwrap();
                 changed_again = true;
             }
         }
@@ -351,7 +380,7 @@ mod tests {
             .entry("Notification".to_string())
             .or_insert_with(|| json!([]));
         append_hook_entry(legacy_entry, hook_command(&script_path, "needs_approval")).unwrap();
-        assert!(has_managed_entry(legacy_entry));
+        assert!(!managed_commands(legacy_entry).is_empty());
 
         let mut changed = false;
         if let Some(entry) = hooks_obj.get_mut("Notification") {
@@ -363,17 +392,20 @@ mod tests {
             let entry = hooks_obj
                 .entry(event.to_string())
                 .or_insert_with(|| json!([]));
-            if !has_managed_entry(entry) {
-                append_hook_entry(entry, hook_command(&script_path, status_arg)).unwrap();
+            let desired_command = hook_command(&script_path, status_arg);
+            if !has_only_desired_managed_entry(entry, &desired_command) {
+                remove_managed_entries(entry);
+                append_hook_entry(entry, desired_command).unwrap();
                 changed = true;
             }
         }
 
         assert!(changed);
-        assert!(!has_managed_entry(hooks_obj.get("Notification").unwrap()));
-        for (event, _) in MANAGED_HOOKS {
+        assert!(managed_commands(hooks_obj.get("Notification").unwrap()).is_empty());
+        for (event, status_arg) in MANAGED_HOOKS {
+            let desired_command = hook_command(&script_path, status_arg);
             assert!(
-                has_managed_entry(hooks_obj.get(event).unwrap()),
+                has_only_desired_managed_entry(hooks_obj.get(event).unwrap(), &desired_command),
                 "{event} should be managed"
             );
         }

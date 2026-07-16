@@ -10,6 +10,7 @@
 //! than causing an error.
 
 use super::{TokenEvent, TokenProvider};
+use crate::storage_paths;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
@@ -29,19 +30,13 @@ pub struct ClaudeCodeProvider {
 impl ClaudeCodeProvider {
     /// Builds a provider rooted at the real `~/.claude/projects` directory,
     /// persisting its offset/dedup state under the OS data dir convention
-    /// (`dirs::data_dir()/tokengochi/claude_code_watcher_state.json`), or
-    /// next to it if that's unavailable.
+    /// with a build-specific Tokengochi namespace.
     pub fn new() -> Self {
         let root = dirs::home_dir()
             .map(|home| home.join(".claude").join("projects"))
             .unwrap_or_else(|| PathBuf::from(".claude/projects"));
 
-        let state_path = dirs::data_dir()
-            .map(|dir| {
-                dir.join("tokengochi")
-                    .join("claude_code_watcher_state.json")
-            })
-            .unwrap_or_else(|| PathBuf::from("claude_code_watcher_state.json"));
+        let state_path = storage_paths::watcher_data_file("claude_code_watcher_state.json");
 
         Self::with_paths(root, state_path)
     }

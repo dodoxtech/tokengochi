@@ -2,6 +2,7 @@ mod claude_hooks;
 mod economy;
 mod overlay_window;
 mod pet;
+mod storage_paths;
 mod store;
 mod tray;
 mod watcher;
@@ -804,7 +805,7 @@ pub fn run() {
             let config =
                 economy::load_economy_config(app.handle()).expect("failed to load economy.toml");
             let (now_unix, today) = now_parts();
-            let app_data_dir = app.path().app_data_dir()?;
+            let app_data_dir = storage_paths::app_data_dir();
             let db_path = app_data_dir.join("tokengochi.sqlite3");
             let ledger = Ledger::open(&db_path)?;
             let state_store = GameStateStore::open(&db_path)?;

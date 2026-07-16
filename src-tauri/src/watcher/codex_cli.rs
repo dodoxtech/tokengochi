@@ -6,6 +6,7 @@
 //! and rollout/session ids; message content is ignored.
 
 use super::{TokenEvent, TokenProvider};
+use crate::storage_paths;
 use crate::watcher::claude_code::{split_complete_lines, WatcherState};
 use serde::Deserialize;
 use std::fs::{self, File};
@@ -23,9 +24,7 @@ impl CodexCliProvider {
         let root = dirs::home_dir()
             .map(|home| home.join(".codex").join("sessions"))
             .unwrap_or_else(|| PathBuf::from(".codex/sessions"));
-        let state_path = dirs::data_dir()
-            .map(|dir| dir.join("tokengochi").join("codex_cli_watcher_state.json"))
-            .unwrap_or_else(|| PathBuf::from("codex_cli_watcher_state.json"));
+        let state_path = storage_paths::watcher_data_file("codex_cli_watcher_state.json");
         Self::with_paths(root, state_path)
     }
 

@@ -74,6 +74,20 @@ ui/
 
 All game-truth lives in Rust; the frontend is presentation + behavior animation only. This keeps the economy tamper-resistant enough and testable.
 
+## Data Storage
+
+Tokengochi stores user/runtime state outside the app bundle. Release builds use the existing production namespace so current users keep their data:
+
+- SQLite game database: `<data_dir>/com.tokengochi.app/tokengochi.sqlite3`.
+- Watcher bridge/state files: `<data_dir>/tokengochi/`.
+
+Debug/dev builds intentionally use separate namespaces so `cargo tauri dev` and local debug builds do not read or mutate release data:
+
+- SQLite game database: `<data_dir>/com.tokengochi.dev/tokengochi.sqlite3`.
+- Watcher bridge/state files: `<data_dir>/tokengochi-dev/`.
+
+On macOS, `<data_dir>` is `~/Library/Application Support`.
+
 ## Runtime and Deployment
 
 - Targets: Windows 10+ (WebView2), macOS 12+ (WKWebView), Ubuntu 22.04+ (webkit2gtk; X11 fully, Wayland best-effort).

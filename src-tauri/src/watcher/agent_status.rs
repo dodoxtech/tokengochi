@@ -9,6 +9,7 @@
 //! forwarded here - no message content, matching the privacy rule in
 //! `docs/knowledge/token-tracking.md`.
 
+use crate::storage_paths;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
@@ -38,14 +39,12 @@ pub struct AgentStatusEvent {
     pub ts: i64,
 }
 
-/// `<data_dir>/tokengochi/agent_status_events.jsonl` - the same base
+/// `<data_dir>/<watcher_namespace>/agent_status_events.jsonl` - the same base
 /// directory the Claude Code token watcher uses for its own state file
 /// (`claude_code_watcher_state.json`). Hook scripts under
 /// `resources/claude-hooks/` append one JSON line per event here.
 pub fn agent_status_events_path() -> PathBuf {
-    dirs::data_dir()
-        .map(|dir| dir.join("tokengochi").join("agent_status_events.jsonl"))
-        .unwrap_or_else(|| PathBuf::from("agent_status_events.jsonl"))
+    storage_paths::watcher_data_file("agent_status_events.jsonl")
 }
 
 fn state_path_for(events_path: &Path) -> PathBuf {
