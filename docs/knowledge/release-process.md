@@ -2,7 +2,7 @@
 type: knowledge
 status: active
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-16
 tags:
   - knowledge
   - packaging
@@ -83,17 +83,20 @@ openssl base64 -A -in /path/to/developer-id-application.p12 -out developer-id-ap
 openssl base64 -A -in /path/to/AuthKey_<KEYID>.p8 -out AuthKey_<KEYID>.p8.base64
 ```
 
-The release workflow imports the `.p12` into a temporary macOS runner keychain, writes the App Store Connect API key into `$RUNNER_TEMP`, builds signed macOS artifacts, and then runs `xcrun notarytool` directly. The workflow submits the final `.dmg` without an indefinite wait, prints the Apple submission id, polls for up to 45 minutes, prints each status transition, fetches the full Apple notarization log automatically when the status is `Invalid`, and fails with the submission id when polling times out.
+The release workflow imports the `.p12` into a temporary macOS runner keychain, writes the App Store Connect API key into `$RUNNER_TEMP`, builds signed macOS artifacts, and then runs `xcrun notarytool` directly. The workflow submits the final `.dmg`, prints the Apple submission id, and polls for up to 15 minutes per attempt, printing each status transition.
+
+Apple's notary service occasionally leaves a submission stuck in `In Progress` indefinitely instead of transitioning to `Accepted`/`Invalid`. If a 15-minute polling window elapses without a terminal status, the workflow resubmits a fresh copy of the same `.dmg` (new submission id) and polls again, up to 3 attempts total (~45 minutes worst case). A real rejection (`Invalid`) fails immediately without retrying.
 
 Expected GitHub Actions notarization log shape:
 
 ```text
+Submitting notarization for .../tokengochi_0.2.6_aarch64.dmg (attempt 1/3)
 Notarization submission id: 2f388aec-8a5e-4502-9c3a-0da4ec97e4cb
 Status: In Progress
 Status: Accepted
 ```
 
-If Apple returns `Invalid`, the job prints `Status: Invalid` followed by the full `notarytool log` JSON. If Apple leaves the submission in progress for the whole polling window, the job fails after 45 minutes and prints the submission id so it can be inspected manually with `xcrun notarytool info` or `xcrun notarytool log`.
+If Apple returns `Invalid`, the job prints `Status: Invalid` followed by the full `notarytool log` JSON. If a submission is still `In Progress` after 15 minutes, the job logs that it's resubmitting and starts a new attempt; after 3 exhausted attempts it fails and prints the last submission id so it can be inspected manually with `xcrun notarytool info` or `xcrun notarytool log`.
 
 Mac release checks:
 

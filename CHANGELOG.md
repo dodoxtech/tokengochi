@@ -4,6 +4,12 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-07-16
+
+### Changed
+
+- macOS release notarization now retries with a fresh submission (up to 3 attempts of 15 minutes each) instead of a single 45-minute wait, working around Apple notary submissions that occasionally get stuck in "In Progress" indefinitely.
+
 ## [0.2.5] - 2026-07-16
 
 ### Added
