@@ -112,6 +112,9 @@ jobs:
           npm ci --prefix ui/dashboard
           npm ci --prefix ui/overlay
 
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "^2" --locked
+
       - name: Prepare macOS Developer ID signing
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -162,13 +165,14 @@ jobs:
           echo "APPLE_API_KEY_PATH=$private_key_path" >> "$GITHUB_ENV"
 
       - name: Build signed macOS app and DMG
+        working-directory: src-tauri
         env:
           APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
           # Updater artifact signing (latest.json + .sig). See docs/tasks/active/0008-packaging-ci-updater.md.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          npm --prefix ui/dashboard exec tauri -- build ${{ matrix.args }}
+          cargo tauri build ${{ matrix.args }}
 
       - name: Locate macOS artifacts
         run: |

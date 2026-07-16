@@ -4,6 +4,12 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-07-16
+
+### Fixed
+
+- macOS release jobs now run `cargo tauri build` from `src-tauri`, preserving the expected project-root-relative frontend build commands while keeping explicit notarization logging.
+
 ## [0.2.3] - 2026-07-16
 
 ### Changed
