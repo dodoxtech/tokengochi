@@ -441,6 +441,15 @@ export function updatePet(dtMs: number, now: number): void {
     updateClimb(dtMs, now);
     return;
   }
+  // Mirrors the ledge "sit" phase's per-tick `pet.y = surfaceY(current)`
+  // (line 251): the floor case never had that resync, so a monitor/DPI
+  // change that resizes the overlay window without firing the DOM "resize"
+  // event (or racing the settings-changed event) left `pet.y` stale relative
+  // to the new groundY() - visually drifting off the floor line even though
+  // the eat check below only compares X, so eating kept "succeeding" anyway.
+  if (pet.supportId === "floor") {
+    pet.y = groundY();
+  }
   if (pet.mode === "dizzy" && now < pet.overrideUntil) {
     return;
   }
@@ -508,12 +517,16 @@ export function updatePet(dtMs: number, now: number): void {
         // Bed got removed/unequipped mid-walk - abandon the trip.
         pet.headingToBed = false;
       } else {
-        const bedX = furnitureX(bed) + 10;
+        const bedX = clamp(furnitureX(bed) + 10, 0, petMaxX());
         const dx = bedX - pet.x;
         pet.facing = dx >= 0 ? 1 : -1;
         if (Math.abs(dx) > 5) {
           pet.mode = "seek";
-          pet.x += Math.sign(dx) * Math.min(Math.abs(dx), (WALK_SPEED * 0.62 * dtMs) / 1000);
+          pet.x = clamp(
+            pet.x + Math.sign(dx) * Math.min(Math.abs(dx), (WALK_SPEED * 0.62 * dtMs) / 1000),
+            0,
+            petMaxX(),
+          );
           return;
         }
         pet.mode = "sleep";

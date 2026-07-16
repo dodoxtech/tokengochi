@@ -4,6 +4,17 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-07-16
+
+### Added
+
+- Dashboard settings panel now shows the currently installed app version next to the update status, so update checks can be verified against a visible baseline.
+
+### Fixed
+
+- Overlay pet no longer keeps walking past the screen edge when heading to bed: the bed-seek path was missing the same bounds clamp every other movement path already had, and the underlying furniture-position math used a hard-coded pet size instead of the configured one.
+- Overlay pet no longer visually drifts off the floor line after a monitor/display change: `pet.y` is now resynced to the ground line every tick while grounded, matching the same per-tick resync the window-ledge "sit" state already had.
+
 ## [0.2.4] - 2026-07-16
 
 ### Fixed

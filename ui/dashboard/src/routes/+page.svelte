@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { getVersion } from "@tauri-apps/api/app";
   import { onMount } from "svelte";
   import { check, type Update } from "@tauri-apps/plugin-updater";
   import { relaunch } from "@tauri-apps/plugin-process";
@@ -79,6 +80,7 @@
   let error = $state("");
   let updateStatus = $state<UpdateStatus>("idle");
   let updateVersion = $state("");
+  let currentVersion = $state("");
   // Holds the checked update handle so the "Download & install" action can
   // reuse it instead of calling check() again.
   let pendingUpdate: Update | null = null;
@@ -264,6 +266,9 @@
 
   onMount(() => {
     void refresh();
+    void getVersion().then((version) => {
+      currentVersion = version;
+    });
     void checkForUpdates(true);
     const unlisten = listen<boolean>("tracking_changed", (event) => {
       if (dashboard) {
@@ -613,7 +618,7 @@
         </label>
 
         <div class="field update-row">
-          <span>Updates</span>
+          <span>Updates ({currentVersion ? `v${currentVersion}` : "…"})</span>
           <span class="update-status">
             {#if updateStatus === "idle"}
               Not checked yet

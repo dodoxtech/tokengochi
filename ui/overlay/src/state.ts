@@ -223,5 +223,5 @@ export function isOverPet(clientX: number, clientY: number): boolean {
 }
 
 export function furnitureX(item: FurniturePlacement): number {
-  return clamp(item.x, 0.05, 0.95) * Math.max(1, window.innerWidth - 72);
+  return clamp(item.x, 0.05, 0.95) * Math.max(1, window.innerWidth - PET_SIZE);
 }
