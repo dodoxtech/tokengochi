@@ -65,6 +65,10 @@
     { id: "ember", label: "Ember", tone: "#ef7d57" },
     { id: "bubble", label: "Bubble", tone: "#73eff7" },
   ];
+  // Keep the starter picker code around for future multi-pet selection. For
+  // now there is only one pet, so onboarding silently uses the default
+  // "sprout" starter and skips the choice UI.
+  const SHOW_STARTER_EGG_PICKER = false;
 
   type UpdateStatus = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "ready" | "error";
 
@@ -304,21 +308,23 @@
       <section class="panel onboarding">
         <div>
           <p class="eyebrow">Welcome</p>
-          <h2>Pick your starter egg</h2>
+          <h2>Start Tokengochi</h2>
         </div>
-        <div class="egg-row" role="radiogroup" aria-label="Starter egg">
-          {#each starterEggs as egg}
-            <button
-              class:selected={selectedEgg === egg.id}
-              class="egg"
-              style={`--tone:${egg.tone}`}
-              onclick={() => (selectedEgg = egg.id)}
-            >
-              <span></span>
-              {egg.label}
-            </button>
-          {/each}
-        </div>
+        {#if SHOW_STARTER_EGG_PICKER}
+          <div class="egg-row" role="radiogroup" aria-label="Starter egg">
+            {#each starterEggs as egg}
+              <button
+                class:selected={selectedEgg === egg.id}
+                class="egg"
+                style={`--tone:${egg.tone}`}
+                onclick={() => (selectedEgg = egg.id)}
+              >
+                <span></span>
+                {egg.label}
+              </button>
+            {/each}
+          </div>
+        {/if}
         <div class="detect">
           <span class:online={dashboard.providers.claudeCodeDetected}></span>
           Claude Code {dashboard.providers.claudeCodeDetected ? "detected" : "not detected yet"}
