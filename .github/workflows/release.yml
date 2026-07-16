@@ -208,63 +208,80 @@ jobs:
         run: |
           set -euo pipefail
 
-          submit_json="$RUNNER_TEMP/notary-submit-${{ matrix.target }}.json"
-          info_json="$RUNNER_TEMP/notary-info-${{ matrix.target }}.json"
-          log_json="$RUNNER_TEMP/notary-log-${{ matrix.target }}.json"
+          # Apple's notary service occasionally leaves a submission stuck in
+          # "In Progress" indefinitely (never transitions to Accepted/Invalid).
+          # Resubmitting the same file usually clears within minutes, so retry
+          # a few times with a shorter per-attempt timeout instead of waiting
+          # out one long 45-minute window.
+          max_attempts=3
+          attempt_timeout=900   # 15 minutes per attempt
+          poll_interval=30
 
-          echo "Submitting notarization for $MACOS_DMG_PATH"
-          xcrun notarytool submit "$MACOS_DMG_PATH" \
-            --key "$APPLE_API_KEY_PATH" \
-            --key-id "$APPLE_API_KEY" \
-            --issuer "$APPLE_API_ISSUER" \
-            --no-progress \
-            --output-format json > "$submit_json"
+          for attempt in $(seq 1 "$max_attempts"); do
+            submit_json="$RUNNER_TEMP/notary-submit-${{ matrix.target }}-$attempt.json"
+            info_json="$RUNNER_TEMP/notary-info-${{ matrix.target }}-$attempt.json"
+            log_json="$RUNNER_TEMP/notary-log-${{ matrix.target }}-$attempt.json"
 
-          submission_id="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["id"])' "$submit_json")"
-
-          if [ -z "$submission_id" ]; then
-            echo "::error::Apple notarization did not return a submission id."
-            cat "$submit_json"
-            exit 1
-          fi
-
-          echo "Notarization submission id: $submission_id"
-          echo "NOTARIZATION_SUBMISSION_ID=$submission_id" >> "$GITHUB_ENV"
-
-          deadline=$((SECONDS + 2700))
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            xcrun notarytool info "$submission_id" \
+            echo "Submitting notarization for $MACOS_DMG_PATH (attempt $attempt/$max_attempts)"
+            xcrun notarytool submit "$MACOS_DMG_PATH" \
               --key "$APPLE_API_KEY_PATH" \
               --key-id "$APPLE_API_KEY" \
               --issuer "$APPLE_API_ISSUER" \
-              --output-format json > "$info_json"
+              --no-progress \
+              --output-format json > "$submit_json"
 
-            status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$info_json")"
-            echo "Status: $status"
+            submission_id="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["id"])' "$submit_json")"
 
-            if [ "$status" = "Accepted" ]; then
-              exit 0
-            fi
-
-            if [ "$status" = "Invalid" ]; then
-              echo "::error::Apple notarization failed with status Invalid. Submission id: $submission_id"
-              xcrun notarytool log "$submission_id" \
-                --key "$APPLE_API_KEY_PATH" \
-                --key-id "$APPLE_API_KEY" \
-                --issuer "$APPLE_API_ISSUER" \
-                "$log_json" || true
-
-              if [ -f "$log_json" ]; then
-                cat "$log_json"
-              fi
-
+            if [ -z "$submission_id" ]; then
+              echo "::error::Apple notarization did not return a submission id."
+              cat "$submit_json"
               exit 1
             fi
 
-            sleep 60
+            echo "Notarization submission id: $submission_id"
+            echo "NOTARIZATION_SUBMISSION_ID=$submission_id" >> "$GITHUB_ENV"
+
+            status="In Progress"
+            deadline=$((SECONDS + attempt_timeout))
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              xcrun notarytool info "$submission_id" \
+                --key "$APPLE_API_KEY_PATH" \
+                --key-id "$APPLE_API_KEY" \
+                --issuer "$APPLE_API_ISSUER" \
+                --output-format json > "$info_json"
+
+              status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$info_json")"
+              echo "Status: $status"
+
+              if [ "$status" = "Accepted" ]; then
+                exit 0
+              fi
+
+              if [ "$status" = "Invalid" ]; then
+                echo "::error::Apple notarization failed with status Invalid. Submission id: $submission_id"
+                xcrun notarytool log "$submission_id" \
+                  --key "$APPLE_API_KEY_PATH" \
+                  --key-id "$APPLE_API_KEY" \
+                  --issuer "$APPLE_API_ISSUER" \
+                  "$log_json" || true
+
+                if [ -f "$log_json" ]; then
+                  cat "$log_json"
+                fi
+
+                exit 1
+              fi
+
+              sleep "$poll_interval"
+            done
+
+            echo "Submission $submission_id still \"$status\" after $((attempt_timeout / 60)) minutes."
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              echo "Apple's notary service appears to be stuck on this submission; resubmitting a fresh copy."
+            fi
           done
 
-          echo "::error::Apple notarization timed out after 45 minutes. Submission id: $submission_id"
+          echo "::error::Apple notarization did not complete after $max_attempts attempts. Last submission id: $submission_id"
           cat "$info_json"
           exit 1
 
