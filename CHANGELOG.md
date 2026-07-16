@@ -4,6 +4,19 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-16
+
+### Changed
+
+- macOS release notarization now runs through explicit `notarytool` submit/poll/log steps so GitHub Actions prints the Apple submission id, bounded status polling, timeout errors, and full Apple failure logs.
+- Development/debug builds now use separate data namespaces from production builds, keeping local development data out of downloaded release apps.
+- Onboarding now skips the starter egg picker while Tokengochi has only one pet, keeping the picker code behind a future multi-pet flag.
+
+### Fixed
+
+- CI smoke builds no longer require the updater private key by disabling updater artifact creation through a CI-only Tauri config overlay.
+- Rust formatting and clippy warnings are fixed across the macOS signing/data-path changes.
+
 ## [0.2.2] - 2026-07-15
 
 ### Added
