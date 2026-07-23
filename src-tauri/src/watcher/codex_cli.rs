@@ -169,7 +169,10 @@ pub(crate) fn parse_codex_line(line: &str) -> Option<CodexRecord> {
     // `turn_context` is where the real model id lives (token_count records
     // carry none); grab it so following usage events can be stamped with it.
     if raw.r#type.as_deref() == Some("turn_context") {
-        let model = raw.payload.and_then(|p| p.model).filter(|m| !m.is_empty())?;
+        let model = raw
+            .payload
+            .and_then(|p| p.model)
+            .filter(|m| !m.is_empty())?;
         return Some(CodexRecord::Model(model));
     }
 

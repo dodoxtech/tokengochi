@@ -706,10 +706,17 @@ mod tests {
         let mut reopened = WatcherState::load(&state_path);
         let (tx, rx) = std::sync::mpsc::channel();
         seed_all_to_end(&dir, &mut reopened);
-        assert_eq!(reopened.offset_for(&file), fs::metadata(&file).unwrap().len());
+        assert_eq!(
+            reopened.offset_for(&file),
+            fs::metadata(&file).unwrap().len()
+        );
         // Nothing new to tail after seeding to end.
         tail_file(&file, &mut reopened, &tx);
-        assert_eq!(rx.try_iter().count(), 0, "while-closed usage must be skipped");
+        assert_eq!(
+            rx.try_iter().count(),
+            0,
+            "while-closed usage must be skipped"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

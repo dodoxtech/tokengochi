@@ -304,9 +304,7 @@ fn is_autostart_enabled(app: AppHandle) -> Result<bool, String> {
 /// `~/.claude/settings.json`, without writing anything - see
 /// `claude_hooks.rs` and `docs/knowledge/agent-status-notifications.md`.
 #[tauri::command]
-fn agent_status_hook_status(
-    app: AppHandle,
-) -> Result<claude_hooks::AgentStatusHookStatus, String> {
+fn agent_status_hook_status(app: AppHandle) -> Result<claude_hooks::AgentStatusHookStatus, String> {
     claude_hooks::status(&app)
 }
 
