@@ -11,10 +11,10 @@
 //! than per-project: the point of the feature is "the pet should react
 //! whenever I use Claude Code anywhere," not just inside this repo.
 
+use crate::hook_settings;
 use crate::storage_paths;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
-use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
@@ -86,94 +86,29 @@ fn manifest_hook_script_path() -> Result<PathBuf, String> {
     })
 }
 
+/// Thin wrappers around `hook_settings` that close over this provider's
+/// [`HOOK_MARKER`], so the rest of this file (and its tests) can keep calling
+/// these unqualified exactly as before the shared module was extracted -
+/// see `hook_settings.rs` for the real implementations.
 fn read_settings(path: &Path) -> Result<Map<String, Value>, String> {
-    if !path.exists() {
-        return Ok(Map::new());
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|err| format!("could not read {}: {err}", path.display()))?;
-    if raw.trim().is_empty() {
-        return Ok(Map::new());
-    }
-    match serde_json::from_str(&raw)
-        .map_err(|err| format!("{} is not valid JSON: {err}", path.display()))?
-    {
-        Value::Object(map) => Ok(map),
-        _ => Err(format!(
-            "{} does not contain a JSON object at the top level",
-            path.display()
-        )),
-    }
+    hook_settings::read_settings(path)
 }
 
 fn write_settings_atomically(path: &Path, root: &Map<String, Value>) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("could not create {}: {err}", parent.display()))?;
-    }
-    if path.exists() {
-        let backup_path = format!("{}.bak", path.display());
-        fs::copy(path, &backup_path).map_err(|err| {
-            format!(
-                "could not back up {} to {backup_path}: {err}",
-                path.display()
-            )
-        })?;
-    }
-    let pretty = serde_json::to_string_pretty(&Value::Object(root.clone()))
-        .map_err(|err| format!("could not serialize {}: {err}", path.display()))?;
-    let tmp_path = format!("{}.tmp", path.display());
-    fs::write(&tmp_path, format!("{pretty}\n"))
-        .map_err(|err| format!("could not write {tmp_path}: {err}"))?;
-    fs::rename(&tmp_path, path)
-        .map_err(|err| format!("could not finalize {}: {err}", path.display()))?;
-    Ok(())
+    hook_settings::write_settings_atomically(path, root)
 }
 
-/// True if any entry under a hook event array (`hooks.Stop`/`hooks.Notification`,
-/// each an array of `{ "hooks": [ { "type", "command" } ] }` groups per the
-/// Claude Code hooks schema) already runs our script.
+#[cfg(test)]
 fn managed_commands(event_entries: &Value) -> Vec<&str> {
-    event_entries
-        .as_array()
-        .map(|entries| {
-            entries
-                .iter()
-                .flat_map(|entry| {
-                    entry
-                        .get("hooks")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                })
-                .filter_map(|hook| hook.get("command").and_then(Value::as_str))
-                .filter(|command| command.contains(HOOK_MARKER))
-                .collect()
-        })
-        .unwrap_or_default()
+    hook_settings::managed_commands(event_entries, HOOK_MARKER)
 }
 
 fn has_only_desired_managed_entry(event_entries: &Value, desired_command: &str) -> bool {
-    let commands = managed_commands(event_entries);
-    commands.len() == 1 && commands[0] == desired_command
-}
-
-fn hook_group_has_managed_entry(entry: &Value) -> bool {
-    entry
-        .get("hooks")
-        .and_then(Value::as_array)
-        .map(|inner| {
-            inner.iter().any(|hook| {
-                hook.get("command")
-                    .and_then(Value::as_str)
-                    .is_some_and(|command| command.contains(HOOK_MARKER))
-            })
-        })
-        .unwrap_or(false)
+    hook_settings::has_only_desired_managed_entry(event_entries, desired_command, HOOK_MARKER)
 }
 
 fn shell_quote(raw: &str) -> String {
-    format!("'{}'", raw.replace('\'', "'\\''"))
+    hook_settings::shell_quote(raw)
 }
 
 fn hook_command(script_path: &Path, status: &str) -> String {
@@ -187,18 +122,14 @@ fn hook_command(script_path: &Path, status: &str) -> String {
     // its executable bit, so `'/path/script.sh' ...` could fail with EACCES.
     // `bash '/path/script.sh' ...` works regardless of the file mode.
     format!(
-        "TOKENGOCHI_DATA_DIR={} bash {} {status} {MANAGED_FLAG}",
+        "TOKENGOCHI_DATA_DIR={} bash {} {status} --provider claude_code {MANAGED_FLAG}",
         shell_quote(&data_dir),
         shell_quote(&script_path.to_string_lossy())
     )
 }
 
 fn append_hook_entry(event_entries: &mut Value, command: String) -> Result<(), String> {
-    let array = event_entries
-        .as_array_mut()
-        .ok_or("expected hooks.<event> to be an array")?;
-    array.push(json!({ "hooks": [ { "type": "command", "command": command } ] }));
-    Ok(())
+    hook_settings::append_hook_entry(event_entries, command)
 }
 
 /// Removes any managed entry (identified by [`HOOK_MARKER`]) from a legacy
@@ -210,12 +141,7 @@ fn append_hook_entry(event_entries: &mut Value, command: String) -> Result<(), S
 /// badges alongside the correct `PermissionRequest`-driven ones. Returns
 /// whether anything was removed.
 fn remove_managed_entries(event_entries: &mut Value) -> bool {
-    let Some(array) = event_entries.as_array_mut() else {
-        return false;
-    };
-    let before = array.len();
-    array.retain(|entry| !hook_group_has_managed_entry(entry));
-    array.len() != before
+    hook_settings::remove_managed_entries(event_entries, HOOK_MARKER)
 }
 
 /// The full set of `(hook event, status arg)` pairs this app manages.
@@ -308,9 +234,59 @@ pub fn install(app: &tauri::AppHandle) -> Result<AgentStatusHookInstallResult, S
     })
 }
 
+/// Removes every managed entry (identified by [`HOOK_MARKER`]) that this app
+/// added, across all managed events plus the legacy `Notification` one, and
+/// prunes any hook-event array we leave empty so we don't litter
+/// `~/.claude/settings.json` with dead keys. Hand-added entries and unrelated
+/// settings are left untouched. Idempotent: calling it when nothing is
+/// installed reports `changed: false` and writes nothing.
+pub fn uninstall(_app: &tauri::AppHandle) -> Result<AgentStatusHookInstallResult, String> {
+    let settings_path = claude_global_settings_path()?;
+    let mut root = read_settings(&settings_path)?;
+
+    let mut changed = false;
+
+    if let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) {
+        // Include the legacy `Notification` event so an uninstall also clears
+        // any stale entry left by older versions (see the migration note above).
+        let events: Vec<String> = MANAGED_HOOKS
+            .iter()
+            .map(|(event, _)| event.to_string())
+            .chain(std::iter::once("Notification".to_string()))
+            .collect();
+        for event in events {
+            let Some(entry) = hooks.get_mut(&event) else {
+                continue;
+            };
+            if remove_managed_entries(entry) {
+                changed = true;
+            }
+            // Drop the event key entirely if we emptied it, so we don't leave
+            // behind `"Stop": []` and friends.
+            if entry.as_array().is_some_and(|array| array.is_empty()) {
+                hooks.remove(&event);
+            }
+        }
+        // If removing our entries emptied the whole `hooks` object, drop it too.
+        if hooks.is_empty() {
+            root.remove("hooks");
+        }
+    }
+
+    if changed {
+        write_settings_atomically(&settings_path, &root)?;
+    }
+
+    Ok(AgentStatusHookInstallResult {
+        changed,
+        settings_path: settings_path.display().to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn hook_script_resolves_to_an_existing_file() {
@@ -380,6 +356,59 @@ mod tests {
         assert_eq!(before, *root2.get("hooks").unwrap());
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn uninstall_removes_managed_entries_and_prunes_empty_keys() {
+        let script_path = manifest_hook_script_path().unwrap();
+        let mut root: Map<String, Value> = Map::new();
+        let hooks_obj = root
+            .entry("hooks".to_string())
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .unwrap();
+        // A hand-added Stop hook that must survive uninstall.
+        let stop = hooks_obj
+            .entry("Stop".to_string())
+            .or_insert_with(|| json!([]));
+        append_hook_entry(stop, "echo custom".to_string()).unwrap();
+        // Our managed entries across every managed event plus legacy Notification.
+        for (event, status_arg) in MANAGED_HOOKS {
+            let entry = hooks_obj
+                .entry(event.to_string())
+                .or_insert_with(|| json!([]));
+            append_hook_entry(entry, hook_command(&script_path, status_arg)).unwrap();
+        }
+        let notif = hooks_obj
+            .entry("Notification".to_string())
+            .or_insert_with(|| json!([]));
+        append_hook_entry(notif, hook_command(&script_path, "needs_approval")).unwrap();
+
+        // Mirror uninstall()'s removal logic against the in-memory tree.
+        let events: Vec<String> = MANAGED_HOOKS
+            .iter()
+            .map(|(event, _)| event.to_string())
+            .chain(std::iter::once("Notification".to_string()))
+            .collect();
+        for event in events {
+            let Some(entry) = hooks_obj.get_mut(&event) else {
+                continue;
+            };
+            remove_managed_entries(entry);
+            if entry.as_array().is_some_and(|array| array.is_empty()) {
+                hooks_obj.remove(&event);
+            }
+        }
+
+        // Managed events that had nothing else are pruned; legacy Notification gone.
+        assert!(!hooks_obj.contains_key("PermissionRequest"));
+        assert!(!hooks_obj.contains_key("PostToolUse"));
+        assert!(!hooks_obj.contains_key("PermissionDenied"));
+        assert!(!hooks_obj.contains_key("Notification"));
+        // Stop kept the hand-added hook and dropped only ours.
+        let stop = hooks_obj.get("Stop").unwrap();
+        assert!(managed_commands(stop).is_empty());
+        assert_eq!(stop.as_array().unwrap().len(), 1);
     }
 
     #[test]

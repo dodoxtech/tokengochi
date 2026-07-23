@@ -4,6 +4,11 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- The dashboard can now auto-install/remove agent-status hooks for Codex CLI (`~/.codex/hooks.json`), mirroring the existing Claude Code integration, so the pet reacts to Codex turn-completed/needs-approval events too. The "Pet reacts to Claude status" toggle is renamed "Pet reacts to agent status" since it now gates both providers. See task 0027.
+- The Claude Code agent-status hook can now be removed from the dashboard, not just installed (a "Remove hook" button next to the existing "Install hook" one).
+
 ### Fixed
 
 - The release workflow's `finalize-updater-manifest` job now uploads the merged manifest as a file literally named `latest.json` instead of using `gh release upload merged-latest.json#latest.json`. The `file#name` syntax only sets a cosmetic display label, not the asset filename, so it created a stray `merged-latest.json` asset and left the real `latest.json` as the windows/linux-only base — the actual reason macOS "Check for updates" kept failing. The v0.2.10 release asset was corrected in place. The finalize job now also re-downloads the published `latest.json` to confirm the macOS keys are present.

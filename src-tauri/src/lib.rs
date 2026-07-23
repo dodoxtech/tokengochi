@@ -1,5 +1,7 @@
 mod claude_hooks;
+mod codex_hooks;
 mod economy;
+mod hook_settings;
 mod overlay_window;
 mod pet;
 mod storage_paths;
@@ -315,6 +317,42 @@ fn install_agent_status_hooks(
     app: AppHandle,
 ) -> Result<claude_hooks::AgentStatusHookInstallResult, String> {
     claude_hooks::install(&app)
+}
+
+/// Removes the managed agent-status hooks from the user's global
+/// `~/.claude/settings.json` (idempotent - safe to call when nothing is
+/// installed). Only entries this app added are removed; hand-added hooks and
+/// unrelated settings are left untouched - see `claude_hooks.rs`.
+#[tauri::command]
+fn uninstall_agent_status_hooks(
+    app: AppHandle,
+) -> Result<claude_hooks::AgentStatusHookInstallResult, String> {
+    claude_hooks::uninstall(&app)
+}
+
+/// Codex CLI counterpart of `agent_status_hook_status` (task 0027) - reports
+/// whether the `Stop`/`PermissionRequest`/`PostToolUse` hooks are present in
+/// the user's global `~/.codex/hooks.json`, without writing anything. See
+/// `codex_hooks.rs` and `docs/knowledge/agent-status-notifications.md`.
+#[tauri::command]
+fn codex_hook_status(app: AppHandle) -> Result<codex_hooks::AgentStatusHookStatus, String> {
+    codex_hooks::status(&app)
+}
+
+/// Codex CLI counterpart of `install_agent_status_hooks` (task 0027).
+#[tauri::command]
+fn install_codex_hooks(
+    app: AppHandle,
+) -> Result<codex_hooks::AgentStatusHookInstallResult, String> {
+    codex_hooks::install(&app)
+}
+
+/// Codex CLI counterpart of `uninstall_agent_status_hooks` (task 0027).
+#[tauri::command]
+fn uninstall_codex_hooks(
+    app: AppHandle,
+) -> Result<codex_hooks::AgentStatusHookInstallResult, String> {
+    codex_hooks::uninstall(&app)
 }
 
 #[tauri::command]
@@ -929,7 +967,11 @@ pub fn run() {
             set_openai_api_key,
             clear_openai_api_key,
             agent_status_hook_status,
-            install_agent_status_hooks
+            install_agent_status_hooks,
+            uninstall_agent_status_hooks,
+            codex_hook_status,
+            install_codex_hooks,
+            uninstall_codex_hooks
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

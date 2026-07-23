@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Appends a Tokengochi agent-status event so the desktop pet can react to
-# Claude Code turn completions, approval prompts, and approval resolutions
-# (task 0017, extended 2026-07-14). Installed as a Stop/PermissionRequest/
-# PostToolUse/PermissionDenied hook command in Claude Code settings - see
+# Claude Code / Codex CLI turn completions, approval prompts, and approval
+# resolutions (task 0017, extended 2026-07-14, made multi-provider in task
+# 0027). Installed as a Stop/PermissionRequest/PostToolUse/PermissionDenied
+# hook command in Claude Code settings, or a Stop/PermissionRequest/
+# PostToolUse hook command in Codex CLI's `hooks.json` - see
 # docs/knowledge/agent-status-notifications.md for the full setup and the
 # `hooks` JSON snippet to add.
 #
@@ -12,9 +14,32 @@ set -euo pipefail
 
 STATUS="${1:-}"
 if [[ "$STATUS" != "completed" && "$STATUS" != "needs_approval" && "$STATUS" != "resolved" ]]; then
-  echo "usage: tokengochi-notify.sh <completed|needs_approval|resolved>" >&2
+  echo "usage: tokengochi-notify.sh <completed|needs_approval|resolved> [--provider claude_code|codex] [--tokengochi-managed]" >&2
   exit 1
 fi
+shift || true
+
+# `--provider` names which agent CLI installed this hook, so the overlay can
+# (eventually) show provider-specific badges/copy; unrecognised or omitted
+# defaults to `claude_code` for backward compatibility with hook commands
+# installed before Codex support existed (task 0027).
+PROVIDER="claude_code"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --provider)
+      PROVIDER="${2:-claude_code}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+# Defensive: strip anything that could break the hand-built JSON line below,
+# same as SESSION_ID below (PROVIDER only ever comes from our own installer,
+# but never trust an argv value that ends up in hand-built JSON).
+PROVIDER="$(printf '%s' "$PROVIDER" | tr -d '"\\\n\r')"
+[[ -n "$PROVIDER" ]] || PROVIDER="claude_code"
 
 # Same base directory Rust's `dirs::data_dir()` resolves to on each OS -
 # must stay in sync with `agent_status_events_path()` in
@@ -46,5 +71,5 @@ SESSION_ID="$(printf '%s' "$SESSION_ID" | tr -d '"\\\n\r')"
 
 TS="$(date +%s)"
 
-printf '{"provider":"claude_code","session_id":"%s","status":"%s","ts":%s}\n' \
-  "$SESSION_ID" "$STATUS" "$TS" >> "$EVENTS_FILE"
+printf '{"provider":"%s","session_id":"%s","status":"%s","ts":%s}\n' \
+  "$PROVIDER" "$SESSION_ID" "$STATUS" "$TS" >> "$EVENTS_FILE"

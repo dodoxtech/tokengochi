@@ -2,7 +2,7 @@
 type: knowledge
 status: active
 created: 2026-07-13
-updated: 2026-07-14
+updated: 2026-07-23
 tags:
   - knowledge
   - integration
@@ -12,9 +12,10 @@ owner: AI agent
 
 # Agent Status Notifications
 
-How the pet reacts to Claude Code turn-completed / needs-approval events
-(task [[../tasks/done/0017-pet-agent-status-notifications|0017]]). Related:
-[[token-tracking|Token Tracking]], [[code-map|Code Map]].
+How the pet reacts to Claude Code / Codex CLI turn-completed / needs-approval
+events (task [[../tasks/done/0017-pet-agent-status-notifications|0017]],
+extended to Codex CLI in task [[../tasks/active/0027-codex-agent-status-hooks|0027]]).
+Related: [[token-tracking|Token Tracking]], [[code-map|Code Map]].
 
 ## Why not reuse the token-usage JSONL watcher
 
@@ -65,12 +66,13 @@ running Tauri app, so the bridge is a small local file instead of a socket/IPC
 mechanism (simpler, and reuses the same "watch a file with `notify`" pattern
 already proven by the token watcher):
 
-1. A hook script (`resources/claude-hooks/tokengochi-notify.sh`) appends one
+1. A hook script (`resources/claude-hooks/tokengochi-notify.sh`, shared by
+   both providers - see [[#Codex CLI support (task 0027)]]) appends one
    JSON line per event to
    `<data_dir>/<watcher_namespace>/agent_status_events.jsonl` - the same base
    directory the token watcher uses for its own state file. The watcher
    namespace is `tokengochi` in release builds and `tokengochi-dev` in
-   debug/dev builds. Each line: `{"provider":"claude_code","session_id":"...",
+   debug/dev builds. Each line: `{"provider":"claude_code"|"codex","session_id":"...",
    "status":"completed"|"needs_approval"|"resolved","ts":<unix_seconds>}`. Only the
    session id is read from the hook's stdin JSON - never message content,
    per the privacy rule in [[token-tracking|Token Tracking]].
@@ -94,7 +96,7 @@ already proven by the token watcher):
    `resolved` only ever clears an existing `needs_approval` badge - it never
    sets one, so it's a no-op when nothing is pending.
 
-## Installing the hook
+## Installing the Claude Code hook
 
 **Auto-install (recommended):** the Dashboard's Settings section has an
 "Install hook" button (visible whenever the hook isn't detected yet) that
@@ -177,6 +179,100 @@ hook installer sets `TOKENGOCHI_DATA_DIR` explicitly so debug/dev builds write
 to `tokengochi-dev` while release builds write to `tokengochi`; keep this in
 sync with `storage_paths::watcher_data_file()` if either side changes.
 
+## Codex CLI support (task 0027)
+
+As of 2026, Codex CLI ships a hooks system that is close to 1:1 with Claude
+Code's - same event names, same JSON shape for hook registration and the
+stdin payload delivered to each hook. This meant `Stop` → `completed` and
+`PermissionRequest` → `needs_approval` mapped over unchanged; the only real
+work was wiring a second install target and tagging events with the right
+`provider`.
+
+Auto-install works the same way as Claude Code's: the Dashboard's Settings
+section has a second "Install hook" button under "Codex CLI hook" that
+writes `~/.codex/hooks.json` for you - `src-tauri/src/codex_hooks.rs`
+(`MANAGED_HOOKS`, `install()`/`status()`/`uninstall()`, exposed as the
+`install_codex_hooks`/`codex_hook_status`/`uninstall_codex_hooks` Tauri
+commands).
+
+**Verified payload schema** (from the Codex hooks reference,
+<https://learn.chatgpt.com/docs/hooks>): both `Stop` and `PermissionRequest`
+deliver `session_id` on stdin (`Stop` also carries `hook_event_name`,
+`turn_id`, `last_assistant_message`, etc.; `PermissionRequest` additionally
+carries `tool_name`/`tool_input`) - the same field name (`session_id`) the
+Claude Code payload uses, so `tokengochi-notify.sh`'s existing
+`jq -r '.session_id // "unknown"'` extraction needed no changes.
+
+**Differences from Claude Code:**
+
+- Config file: `~/.codex/hooks.json`, a dedicated hooks file (or inline
+  `[hooks]` tables in `~/.codex/config.toml`, not used here - JSON is easier
+  to read-modify-write atomically, same reasoning as the Claude Code side).
+- No `PermissionDenied` equivalent event exists in the Codex hooks reference,
+  so Codex only gets `Stop`/`PermissionRequest`/`PostToolUse` (3 managed
+  hooks vs. Claude Code's 4) - `PostToolUse` alone carries `resolved`.
+- No legacy `Notification`-style migration needed - Codex hooks are new, so
+  `codex_hooks::install()`/`uninstall()` skip the migration step
+  `claude_hooks.rs` has for its old `Notification`-based install.
+- Older Codex CLI builds predate the hooks system entirely and only expose a
+  `notify` program that fires on turn-complete (no approval event - see
+  <https://github.com/openai/codex/issues/11808>). Those builds simply won't
+  react to the installed `hooks.json` entries; there's no separate code path
+  for them.
+
+**Provider tagging:** `tokengochi-notify.sh` accepts an optional
+`--provider claude_code|codex` flag (defaults to `claude_code` for hook
+commands installed before this flag existed, keeping old installs working
+unchanged) and writes it straight into the `provider` field of the emitted
+event. `src-tauri/src/codex_hooks.rs` always passes `--provider codex`.
+
+**Shared plumbing:** the atomic read/write-with-backup and marker-based
+managed-entry detection used to live only in `claude_hooks.rs`; it was
+extracted to `src-tauri/src/hook_settings.rs` so `codex_hooks.rs` doesn't
+duplicate it. Only the settings path, the managed event list, and the
+`--provider` argument differ between the two provider modules now.
+
+**Manual install** mirrors the Claude Code snippet above, targeting
+`~/.codex/hooks.json` instead of `~/.claude/settings.json`, with
+`--provider codex` appended to each command and no `PermissionDenied` entry:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/absolute/path/to/tokengochi/resources/claude-hooks/tokengochi-notify.sh completed --provider codex"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/absolute/path/to/tokengochi/resources/claude-hooks/tokengochi-notify.sh needs_approval --provider codex"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/absolute/path/to/tokengochi/resources/claude-hooks/tokengochi-notify.sh resolved --provider codex"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
 ## Open Questions / Follow-ups
 
 - Windows has no hook script yet (bash-only); a `.ps1` equivalent is a
@@ -187,14 +283,24 @@ sync with `storage_paths::watcher_data_file()` if either side changes.
   source), but will break for a packaged build shipped to a machine without
   the repo - bundling the script as a Tauri resource (`BaseDirectory::Resource`,
   same pattern as `economy.toml`) is a follow-up for whenever this ships.
-- Auto-install only targets the global `~/.claude/settings.json`; there's no
-  per-project install path from the dashboard (the manual JSON snippet above
-  still covers that case if someone wants it).
+- Auto-install only targets the global `~/.claude/settings.json` /
+  `~/.codex/hooks.json`; there's no per-project install path from the
+  dashboard (the manual JSON snippets above still cover that case if someone
+  wants it).
 - `PermissionRequest` → `needs_approval` has only been verified in the VS Code
-  extension so far; the terminal CLI path is assumed to fire it the same way
-  per the hooks reference but hasn't been separately confirmed live.
+  extension so far (Claude Code); the terminal CLI path is assumed to fire it
+  the same way per the hooks reference but hasn't been separately confirmed
+  live. The Codex CLI hooks integration (task 0027) is implemented against
+  the published payload schema but has not yet been exercised against a real
+  Codex CLI session with hooks support - that's the outstanding manual
+  verification step before task 0027 is marked done.
 - Multi-session behavior: the current design does not distinguish which
   session an event came from beyond carrying `session_id` through the event -
   the badge is a single global "something needs attention" signal, not
-  per-session. Concurrent sessions overwrite/refresh the same badge rather
+  per-session, and not per-provider either. Concurrent sessions (including
+  mixed Claude Code + Codex sessions) overwrite/refresh the same badge rather
   than stacking.
+- Codex CLI builds older than its hooks feature silently no-op: installing
+  writes `~/.codex/hooks.json` but that Codex version never reads it, so the
+  dashboard would show "installed" with no visible effect. There's no
+  version check today to warn the user about this.

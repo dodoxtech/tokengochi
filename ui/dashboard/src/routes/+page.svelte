@@ -112,6 +112,11 @@
   let agentStatusHookStatus = $state<AgentStatusHookStatus | null>(null);
   let agentStatusHookCheckError = $state("");
   let agentStatusHookBusy = $state(false);
+  // Codex CLI counterpart of the above (task 0027) - same shape, separate
+  // state since the two providers install/uninstall independently.
+  let codexHookStatus = $state<AgentStatusHookStatus | null>(null);
+  let codexHookCheckError = $state("");
+  let codexHookBusy = $state(false);
 
   function formatNumber(value: number): string {
     return Math.round(value).toLocaleString();
@@ -139,6 +144,15 @@
       agentStatusHookStatus = null;
       agentStatusHookCheckError = String(cause);
     }
+    // Same rationale as above: a malformed ~/.codex/hooks.json should only
+    // degrade this readout, not the whole dashboard.
+    try {
+      codexHookCheckError = "";
+      codexHookStatus = await invoke<AgentStatusHookStatus>("codex_hook_status");
+    } catch (cause) {
+      codexHookStatus = null;
+      codexHookCheckError = String(cause);
+    }
   }
 
   async function installAgentStatusHooks() {
@@ -151,6 +165,45 @@
       agentStatusHookCheckError = String(cause);
     } finally {
       agentStatusHookBusy = false;
+    }
+  }
+
+  async function uninstallAgentStatusHooks() {
+    try {
+      agentStatusHookBusy = true;
+      agentStatusHookCheckError = "";
+      await invoke("uninstall_agent_status_hooks");
+      agentStatusHookStatus = await invoke<AgentStatusHookStatus>("agent_status_hook_status");
+    } catch (cause) {
+      agentStatusHookCheckError = String(cause);
+    } finally {
+      agentStatusHookBusy = false;
+    }
+  }
+
+  async function installCodexHooks() {
+    try {
+      codexHookBusy = true;
+      codexHookCheckError = "";
+      await invoke("install_codex_hooks");
+      codexHookStatus = await invoke<AgentStatusHookStatus>("codex_hook_status");
+    } catch (cause) {
+      codexHookCheckError = String(cause);
+    } finally {
+      codexHookBusy = false;
+    }
+  }
+
+  async function uninstallCodexHooks() {
+    try {
+      codexHookBusy = true;
+      codexHookCheckError = "";
+      await invoke("uninstall_codex_hooks");
+      codexHookStatus = await invoke<AgentStatusHookStatus>("codex_hook_status");
+    } catch (cause) {
+      codexHookCheckError = String(cause);
+    } finally {
+      codexHookBusy = false;
     }
   }
 
@@ -578,7 +631,7 @@
                 agentStatusNotificationsEnabled: !dashboard?.settings.agentStatusNotificationsEnabled,
               })}
           />
-          <span>Pet reacts to Claude status (done / needs approval)</span>
+          <span>Pet reacts to agent status (done / needs approval)</span>
         </label>
         <div class="field agent-status-hook">
           <span class="label-with-hint">
@@ -589,7 +642,7 @@
                 Adds a `Stop`/`Notification` hook to your global
                 <code>~/.claude/settings.json</code> so Claude Code tells Tokengochi
                 when a turn finishes or needs your approval - that's what powers the
-                "Pet reacts to Claude status" toggle above. Only a session id is
+                "Pet reacts to agent status" toggle above. Only a session id is
                 read from the hook payload; no prompt or file content ever leaves
                 your machine. Safe to install more than once (it won't duplicate
                 itself) and never touches your other hooks.
@@ -598,6 +651,11 @@
           </span>
           {#if agentStatusHookStatus?.installed}
             <span class="hook-status hook-status-ok">Installed in {agentStatusHookStatus.settingsPath}</span>
+            <div class="button-row">
+              <button class="ghost" disabled={agentStatusHookBusy} onclick={uninstallAgentStatusHooks}>
+                {agentStatusHookBusy ? "Removing…" : "Remove hook"}
+              </button>
+            </div>
           {:else}
             <span class="hook-status">
               Not installed - the pet can't react to Claude turns until this is set up globally.
@@ -610,6 +668,44 @@
           {/if}
           {#if agentStatusHookCheckError}
             <small class="error">{agentStatusHookCheckError}</small>
+          {/if}
+        </div>
+
+        <div class="field agent-status-hook">
+          <span class="label-with-hint">
+            Codex CLI hook
+            <button type="button" class="info-hint" aria-label="What does the Codex CLI hook do?">
+              <span aria-hidden="true">?</span>
+              <span class="tooltip-text" role="tooltip">
+                Adds a `Stop`/`PermissionRequest`/`PostToolUse` hook to your global
+                <code>~/.codex/hooks.json</code> so Codex CLI tells Tokengochi when a
+                turn finishes or needs your approval - same reaction as the Claude
+                Code hook above. Only a session id is read from the hook payload; no
+                prompt or file content ever leaves your machine. Safe to install more
+                than once (it won't duplicate itself) and never touches your other
+                hooks. Requires a Codex CLI version with hooks support.
+              </span>
+            </button>
+          </span>
+          {#if codexHookStatus?.installed}
+            <span class="hook-status hook-status-ok">Installed in {codexHookStatus.settingsPath}</span>
+            <div class="button-row">
+              <button class="ghost" disabled={codexHookBusy} onclick={uninstallCodexHooks}>
+                {codexHookBusy ? "Removing…" : "Remove hook"}
+              </button>
+            </div>
+          {:else}
+            <span class="hook-status">
+              Not installed - the pet can't react to Codex turns until this is set up globally.
+            </span>
+            <div class="button-row">
+              <button class="primary" disabled={codexHookBusy} onclick={installCodexHooks}>
+                {codexHookBusy ? "Installing…" : "Install hook"}
+              </button>
+            </div>
+          {/if}
+          {#if codexHookCheckError}
+            <small class="error">{codexHookCheckError}</small>
           {/if}
         </div>
 
