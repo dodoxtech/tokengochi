@@ -4,6 +4,10 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- The release workflow's `finalize-updater-manifest` job now uploads the merged manifest as a file literally named `latest.json` instead of using `gh release upload merged-latest.json#latest.json`. The `file#name` syntax only sets a cosmetic display label, not the asset filename, so it created a stray `merged-latest.json` asset and left the real `latest.json` as the windows/linux-only base — the actual reason macOS "Check for updates" kept failing. The v0.2.10 release asset was corrected in place. The finalize job now also re-downloads the published `latest.json` to confirm the macOS keys are present.
+
 ## [0.2.10] - 2026-07-23
 
 ### Fixed

@@ -373,24 +373,24 @@ jobs:
           set -euo pipefail
 
           # Why a dedicated finalize job instead of merging inside each build
-          # job: tauri-action (windows/linux) and the macOS jobs previously all
-          # raced to read-modify-write the same latest.json release asset. That
-          # never converged - `gh release upload --clobber` deletes and recreates
-          # the asset, and a `gh release download` immediately afterwards is
-          # served the pre-clobber copy (read-after-write staleness), so every
-          # job's verify-and-retry loop kept "losing" its own platform entry.
+          # job: the macOS jobs use `cargo tauri build` (notarization needs
+          # custom steps), which never writes a latest.json the way tauri-action
+          # does for windows/linux. Earlier attempts had each job read-modify-
+          # write the shared latest.json asset, which never worked - see the
+          # upload note below for the actual reason.
           #
-          # This job is the only writer of latest.json and runs once, after all
-          # build jobs finish (`needs`), so there is no concurrent writer and no
-          # self-read-after-own-write race. It takes the version/notes/pub_date
-          # and the windows/linux platforms from the manifest tauri-action
-          # already published, then adds the two macOS platforms by reading the
-          # signed updater artifacts (`*.app.tar.gz.sig`) uploaded to the release.
+          # This job is the single, final writer of latest.json. It runs once,
+          # after every build job finishes (`needs`), so there is no concurrent
+          # writer. It takes version/notes/pub_date and the windows/linux
+          # platforms from the manifest tauri-action already published, then adds
+          # the two macOS platforms by reading the signed updater artifacts
+          # (`*.app.tar.gz.sig`) uploaded to the release.
           repo="$GITHUB_REPOSITORY"
           tag="$GITHUB_REF_NAME"
           version="${tag#v}"
           work="$RUNNER_TEMP/manifest"
-          mkdir -p "$work"
+          out_dir="$work/out"
+          mkdir -p "$work" "$out_dir"
 
           # Base manifest published by tauri-action (windows + linux platforms).
           base="$work/latest.json"
@@ -415,7 +415,13 @@ jobs:
           done
 
           base_url="https://github.com/$repo/releases/download/$tag"
-          merged="$work/merged-latest.json"
+          # The output file must literally be named latest.json: `gh release
+          # upload` uses the file's basename as the asset name. The `file#name`
+          # syntax sets only a cosmetic display label, NOT the asset filename -
+          # uploading `merged-latest.json#latest.json` created an asset named
+          # `merged-latest.json`, leaving the real `latest.json` as the
+          # windows/linux-only base and breaking macOS "Check for updates".
+          merged="$out_dir/latest.json"
 
           python3 - "$base" "$merged" "$base_url" \
             "$(cat "$aarch64_sig")" "$(cat "$x86_64_sig")" <<'PY'
@@ -442,9 +448,13 @@ jobs:
           PY
 
           # Single, final upload of latest.json - no concurrent writer, so no
-          # verify-and-retry loop is needed.
-          gh release upload "$tag" "$merged#latest.json" --clobber --repo "$repo"
+          # verify-and-retry loop is needed. No `#label` suffix, so the asset is
+          # named after the file (latest.json) and clobbers the base one.
+          gh release upload "$tag" "$merged" --clobber --repo "$repo"
 
-          # Sanity check that both macOS keys are present in what we uploaded.
-          python3 -c "import json,sys; p=json.load(open(sys.argv[1]))['platforms']; missing=[k for k in ('darwin-aarch64','darwin-x86_64') if k not in p]; sys.exit('missing '+', '.join(missing) if missing else 0)" "$merged"
+          # Confirm the published asset actually carries both macOS keys.
+          check="$work/published-latest.json"
+          gh release download "$tag" --repo "$repo" \
+            --pattern latest.json --output "$check" --clobber
+          python3 -c "import json,sys; p=json.load(open(sys.argv[1]))['platforms']; missing=[k for k in ('darwin-aarch64','darwin-x86_64') if k not in p]; sys.exit('published latest.json missing '+', '.join(missing) if missing else 0)" "$check"
           echo "Published latest.json with macOS platforms for $tag."
