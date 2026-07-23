@@ -80,6 +80,12 @@ jobs:
     timeout-minutes: 75
     strategy:
       fail-fast: false
+      # Both matrix legs race to read-modify-write the same published
+      # `latest.json` in the merge step below. Running them in parallel with
+      # identical retry backoff timing made them clobber each other in
+      # lockstep every attempt (a livelock), exhausting all retries. Run them
+      # one at a time so only one writer touches latest.json at once.
+      max-parallel: 1
       matrix:
         include:
           - name: apple-silicon
@@ -442,7 +448,7 @@ jobs:
             fi
 
             echo "A concurrent upload clobbered our platforms; retrying merge (attempt $attempt)."
-            sleep $((attempt * 5))
+            sleep $((attempt * 5 + RANDOM % 5))
           done
 
           echo "::error::Could not get macOS platforms to stick in latest.json after retries."

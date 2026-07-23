@@ -4,6 +4,12 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-07-23
+
+### Fixed
+
+- The two macOS release jobs (`apple-silicon`, `intel`) no longer run in parallel: they raced to read-modify-write the same published `latest.json` with identical retry backoff timing, clobbering each other in lockstep every attempt until retries were exhausted. They now run one at a time (`max-parallel: 1`), and the retry backoff has jitter as defense-in-depth. v0.2.8 shipped as a draft with a missing macOS updater manifest as a result.
+
 ## [0.2.8] - 2026-07-23
 
 ### Fixed
