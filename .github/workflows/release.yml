@@ -80,12 +80,6 @@ jobs:
     timeout-minutes: 75
     strategy:
       fail-fast: false
-      # Both matrix legs race to read-modify-write the same published
-      # `latest.json` in the merge step below. Running them in parallel with
-      # identical retry backoff timing made them clobber each other in
-      # lockstep every attempt (a livelock), exhausting all retries. Run them
-      # one at a time so only one writer touches latest.json at once.
-      max-parallel: 1
       matrix:
         include:
           - name: apple-silicon
@@ -299,16 +293,18 @@ jobs:
           xcrun stapler validate "$MACOS_DMG_PATH"
           spctl --assess --type install --verbose "$MACOS_DMG_PATH"
 
-      - name: Prepare macOS updater artifacts and manifest
+      - name: Rename macOS updater artifacts per-arch
         run: |
           set -euo pipefail
 
           # `cargo tauri build` (used here instead of tauri-action, because
-          # notarization needs custom steps) only emits the updater
-          # .app.tar.gz/.sig pair - it never writes a latest.json the way
-          # tauri-action does for the windows/linux jobs. Build one by hand so
-          # the merge step below has a local manifest for this platform to
-          # union into the published one.
+          # notarization needs custom steps) emits the updater .app.tar.gz/.sig
+          # pair. Both macOS arch jobs otherwise produce an identically-named
+          # tokengochi.app.tar.gz(.sig) - rename per-target so uploading them to
+          # the same release with --clobber doesn't overwrite one arch with the
+          # other. The finalize-updater-manifest job reads these arch-unique
+          # .sig assets back to assemble latest.json once, after every platform
+          # job has finished (see that job for why we no longer merge here).
           bundle_root="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
           tar_path="$bundle_root/tokengochi.app.tar.gz"
           sig_path="$bundle_root/tokengochi.app.tar.gz.sig"
@@ -319,40 +315,8 @@ jobs:
             exit 1
           fi
 
-          case "${{ matrix.target }}" in
-            aarch64-apple-darwin) platform_key="darwin-aarch64" ;;
-            x86_64-apple-darwin) platform_key="darwin-x86_64" ;;
-            *) echo "::error::Unknown macOS target ${{ matrix.target }}"; exit 1 ;;
-          esac
-
-          # Both macOS arch jobs otherwise produce an identically-named
-          # tokengochi.app.tar.gz(.sig) - rename per-target so uploading them
-          # to the same release with --clobber doesn't overwrite one arch
-          # with the other.
-          renamed_tar="$bundle_root/tokengochi_${{ matrix.target }}.app.tar.gz"
-          renamed_sig="$renamed_tar.sig"
-          mv "$tar_path" "$renamed_tar"
-          mv "$sig_path" "$renamed_sig"
-
-          version="${GITHUB_REF_NAME#v}"
-          pub_date="$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
-          signature="$(cat "$renamed_sig")"
-          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$(basename "$renamed_tar")"
-
-          python3 - "$version" "$pub_date" "$platform_key" "$signature" "$url" "$bundle_root/latest.json" <<'PY'
-          import json, sys
-          version, pub_date, platform_key, signature, url, out_path = sys.argv[1:7]
-          manifest = {
-              "version": version,
-              "notes": "See CHANGELOG.md for details.",
-              "pub_date": pub_date,
-              "platforms": {
-                  platform_key: {"signature": signature, "url": url},
-              },
-          }
-          with open(out_path, "w") as f:
-              json.dump(manifest, f, indent=2)
-          PY
+          mv "$tar_path" "$bundle_root/tokengochi_${{ matrix.target }}.app.tar.gz"
+          mv "$sig_path" "$bundle_root/tokengochi_${{ matrix.target }}.app.tar.gz.sig"
 
       - name: Upload macOS binary assets
         env:
@@ -361,13 +325,10 @@ jobs:
           set -euo pipefail
 
           bundle_root="src-tauri/target/${{ matrix.target }}/release/bundle"
-          # NOTE: latest.json is handled by the separate merge step below, not
-          # here. Each build job (windows, linux, and each macOS arch) produces
-          # its own single-platform latest.json; a plain `--clobber` upload
-          # would overwrite the others, which is exactly how the macOS
-          # (`darwin-*`) entries went missing from the published manifest and
-          # broke "Check for updates" on macOS. The assets below all have
-          # arch-unique names, so uploading them with --clobber is safe.
+          # latest.json is assembled once by the finalize-updater-manifest job
+          # after every platform job finishes; this step only uploads the binary
+          # artifacts. Every asset below has an arch-unique name, so a --clobber
+          # upload can never overwrite another platform's asset.
           release_assets=()
           while IFS= read -r asset; do
             release_assets+=("$asset")
@@ -396,60 +357,94 @@ jobs:
           printf ' - %s\n' "${release_assets[@]}"
           gh release upload "$GITHUB_REF_NAME" "${release_assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
 
-      - name: Merge macOS platforms into updater manifest
+  finalize-updater-manifest:
+    name: finalize-updater-manifest
+    runs-on: ubuntu-latest
+    # Run only after every platform job has uploaded its assets, so this is the
+    # single, final writer of latest.json.
+    needs: [release, release-macos]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Assemble and publish updater manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          bundle_root="src-tauri/target/${{ matrix.target }}/release/bundle"
-          local_latest="$(find "$bundle_root" -type f -name 'latest.json' | head -n 1)"
-          if [ -z "$local_latest" ] || [ ! -f "$local_latest" ]; then
-            echo "::error::No macOS latest.json was found under $bundle_root."
-            find "$bundle_root" -maxdepth 4 -print
+          # Why a dedicated finalize job instead of merging inside each build
+          # job: tauri-action (windows/linux) and the macOS jobs previously all
+          # raced to read-modify-write the same latest.json release asset. That
+          # never converged - `gh release upload --clobber` deletes and recreates
+          # the asset, and a `gh release download` immediately afterwards is
+          # served the pre-clobber copy (read-after-write staleness), so every
+          # job's verify-and-retry loop kept "losing" its own platform entry.
+          #
+          # This job is the only writer of latest.json and runs once, after all
+          # build jobs finish (`needs`), so there is no concurrent writer and no
+          # self-read-after-own-write race. It takes the version/notes/pub_date
+          # and the windows/linux platforms from the manifest tauri-action
+          # already published, then adds the two macOS platforms by reading the
+          # signed updater artifacts (`*.app.tar.gz.sig`) uploaded to the release.
+          repo="$GITHUB_REPOSITORY"
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          work="$RUNNER_TEMP/manifest"
+          mkdir -p "$work"
+
+          # Base manifest published by tauri-action (windows + linux platforms).
+          base="$work/latest.json"
+          if ! gh release download "$tag" --repo "$repo" \
+            --pattern latest.json --output "$base" --clobber; then
+            echo "::error::No base latest.json (from the windows/linux jobs) is published on $tag."
             exit 1
           fi
 
-          # The windows/linux jobs (via tauri-action) and the sibling macOS arch
-          # job all write the same `latest.json` asset concurrently. There is no
-          # atomic compare-and-swap on release assets, so instead we converge:
-          # download whatever is currently published, union its `platforms` with
-          # ours, re-upload, then verify our platform keys survived. If a
-          # concurrent writer clobbered us in between, we loop and merge again.
-          # The platform set only ever grows, so this terminates once every
-          # writer has seen its own entries land.
-          merge_script=".github/scripts/merge-updater-manifest.py"
-          for attempt in $(seq 1 8); do
-            remote_latest="$RUNNER_TEMP/remote-latest.json"
-            rm -f "$remote_latest"
-            if gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-              --pattern latest.json --output "$remote_latest" --clobber 2>/dev/null; then
-              echo "Merging into existing published latest.json (attempt $attempt)."
-            else
-              echo "No published latest.json yet; starting from the macOS build (attempt $attempt)."
-              cp "$local_latest" "$remote_latest"
+          # Pull down the two arch-unique macOS updater signatures.
+          gh release download "$tag" --repo "$repo" \
+            --pattern 'tokengochi_*-apple-darwin.app.tar.gz.sig' --dir "$work" --clobber
+
+          aarch64_sig="$work/tokengochi_aarch64-apple-darwin.app.tar.gz.sig"
+          x86_64_sig="$work/tokengochi_x86_64-apple-darwin.app.tar.gz.sig"
+          for sig in "$aarch64_sig" "$x86_64_sig"; do
+            if [ ! -f "$sig" ]; then
+              echo "::error::Missing macOS updater signature: $(basename "$sig")."
+              ls -la "$work"
+              exit 1
             fi
-
-            merged="$RUNNER_TEMP/merged-latest.json"
-            python3 "$merge_script" merge "$remote_latest" "$local_latest" "$merged"
-
-            gh release upload "$GITHUB_REF_NAME" "$merged#latest.json" \
-              --clobber --repo "$GITHUB_REPOSITORY"
-
-            # Verify our platform keys survived a possible concurrent upload.
-            verify_latest="$RUNNER_TEMP/verify-latest.json"
-            rm -f "$verify_latest"
-            gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-              --pattern latest.json --output "$verify_latest" --clobber
-
-            if python3 "$merge_script" verify "$verify_latest" "$local_latest"; then
-              echo "macOS platforms present in published latest.json."
-              exit 0
-            fi
-
-            echo "A concurrent upload clobbered our platforms; retrying merge (attempt $attempt)."
-            sleep $((attempt * 5 + RANDOM % 5))
           done
 
-          echo "::error::Could not get macOS platforms to stick in latest.json after retries."
-          exit 1
+          base_url="https://github.com/$repo/releases/download/$tag"
+          merged="$work/merged-latest.json"
+
+          python3 - "$base" "$merged" "$base_url" \
+            "$(cat "$aarch64_sig")" "$(cat "$x86_64_sig")" <<'PY'
+          import json, sys
+
+          base_path, out_path, base_url, aarch64_sig, x86_64_sig = sys.argv[1:6]
+          with open(base_path) as f:
+              manifest = json.load(f)
+
+          platforms = manifest.setdefault("platforms", {})
+          platforms["darwin-aarch64"] = {
+              "signature": aarch64_sig,
+              "url": f"{base_url}/tokengochi_aarch64-apple-darwin.app.tar.gz",
+          }
+          platforms["darwin-x86_64"] = {
+              "signature": x86_64_sig,
+              "url": f"{base_url}/tokengochi_x86_64-apple-darwin.app.tar.gz",
+          }
+
+          with open(out_path, "w") as f:
+              json.dump(manifest, f, indent=2)
+
+          print("Final updater manifest platforms: " + ", ".join(sorted(platforms)))
+          PY
+
+          # Single, final upload of latest.json - no concurrent writer, so no
+          # verify-and-retry loop is needed.
+          gh release upload "$tag" "$merged#latest.json" --clobber --repo "$repo"
+
+          # Sanity check that both macOS keys are present in what we uploaded.
+          python3 -c "import json,sys; p=json.load(open(sys.argv[1]))['platforms']; missing=[k for k in ('darwin-aarch64','darwin-x86_64') if k not in p]; sys.exit('missing '+', '.join(missing) if missing else 0)" "$merged"
+          echo "Published latest.json with macOS platforms for $tag."

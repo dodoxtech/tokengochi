@@ -4,6 +4,12 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-07-23
+
+### Fixed
+
+- The macOS updater manifest is now assembled by a single dedicated `finalize-updater-manifest` job that runs after all platform builds, instead of each build job racing to read-modify-write the shared `latest.json`. That approach never converged: `gh release upload --clobber` recreates the asset and an immediate `gh release download` is served the stale pre-clobber copy, so every job's verify-and-retry loop kept failing to see its own `darwin-*` entry (v0.2.8 and v0.2.9 both shipped as drafts with a missing macOS updater manifest). The finalize job is the only writer and uploads `latest.json` exactly once.
+
 ## [0.2.9] - 2026-07-23
 
 ### Fixed
