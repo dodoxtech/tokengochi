@@ -293,6 +293,61 @@ jobs:
           xcrun stapler validate "$MACOS_DMG_PATH"
           spctl --assess --type install --verbose "$MACOS_DMG_PATH"
 
+      - name: Prepare macOS updater artifacts and manifest
+        run: |
+          set -euo pipefail
+
+          # `cargo tauri build` (used here instead of tauri-action, because
+          # notarization needs custom steps) only emits the updater
+          # .app.tar.gz/.sig pair - it never writes a latest.json the way
+          # tauri-action does for the windows/linux jobs. Build one by hand so
+          # the merge step below has a local manifest for this platform to
+          # union into the published one.
+          bundle_root="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          tar_path="$bundle_root/tokengochi.app.tar.gz"
+          sig_path="$bundle_root/tokengochi.app.tar.gz.sig"
+
+          if [ ! -f "$tar_path" ] || [ ! -f "$sig_path" ]; then
+            echo "::error::Missing updater artifacts ($tar_path / $sig_path)."
+            find "$bundle_root" -maxdepth 2 -print
+            exit 1
+          fi
+
+          case "${{ matrix.target }}" in
+            aarch64-apple-darwin) platform_key="darwin-aarch64" ;;
+            x86_64-apple-darwin) platform_key="darwin-x86_64" ;;
+            *) echo "::error::Unknown macOS target ${{ matrix.target }}"; exit 1 ;;
+          esac
+
+          # Both macOS arch jobs otherwise produce an identically-named
+          # tokengochi.app.tar.gz(.sig) - rename per-target so uploading them
+          # to the same release with --clobber doesn't overwrite one arch
+          # with the other.
+          renamed_tar="$bundle_root/tokengochi_${{ matrix.target }}.app.tar.gz"
+          renamed_sig="$renamed_tar.sig"
+          mv "$tar_path" "$renamed_tar"
+          mv "$sig_path" "$renamed_sig"
+
+          version="${GITHUB_REF_NAME#v}"
+          pub_date="$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
+          signature="$(cat "$renamed_sig")"
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$(basename "$renamed_tar")"
+
+          python3 - "$version" "$pub_date" "$platform_key" "$signature" "$url" "$bundle_root/latest.json" <<'PY'
+          import json, sys
+          version, pub_date, platform_key, signature, url, out_path = sys.argv[1:7]
+          manifest = {
+              "version": version,
+              "notes": "See CHANGELOG.md for details.",
+              "pub_date": pub_date,
+              "platforms": {
+                  platform_key: {"signature": signature, "url": url},
+              },
+          }
+          with open(out_path, "w") as f:
+              json.dump(manifest, f, indent=2)
+          PY
+
       - name: Upload macOS binary assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,6 +4,12 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-07-23
+
+### Fixed
+
+- macOS release jobs now hand-build a `latest.json` from their signed updater artifacts before the merge step, fixing the merge always failing with "No macOS latest.json was found" (`cargo tauri build` never wrote one, unlike `tauri-action` on Windows/Linux) — v0.2.7 shipped without macOS entries in the published updater manifest as a result.
+
 ## [0.2.7] - 2026-07-23
 
 ### Added
