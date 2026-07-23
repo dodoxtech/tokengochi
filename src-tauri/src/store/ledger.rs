@@ -87,6 +87,44 @@ impl Ledger {
             .query_row("SELECT COUNT(*) FROM token_events", [], |row| row.get(0))
     }
 
+    /// Same window as [`token_totals_between`], but broken out per provider
+    /// (`"claude_code"`, `"codex_cli"`, ...) so the dashboard can show each
+    /// provider's usage separately instead of one merged total. Providers with
+    /// no events in the window are simply absent from the result.
+    pub fn token_totals_between_by_provider(
+        &self,
+        start_unix: i64,
+        end_unix: i64,
+    ) -> rusqlite::Result<Vec<(String, TokenTotals)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT
+                provider,
+                COALESCE(SUM(input_tokens), 0),
+                COALESCE(SUM(output_tokens), 0),
+                COALESCE(SUM(cache_read_tokens), 0)
+             FROM token_events
+             WHERE timestamp >= ?1 AND timestamp < ?2
+             GROUP BY provider
+             ORDER BY provider",
+        )?;
+        let rows = stmt.query_map(params![start_unix, end_unix], |row| {
+            let provider: String = row.get(0)?;
+            let input = row.get::<_, i64>(1)? as u64;
+            let output = row.get::<_, i64>(2)? as u64;
+            let cache_read = row.get::<_, i64>(3)? as u64;
+            Ok((
+                provider,
+                TokenTotals {
+                    input,
+                    output,
+                    cache_read,
+                    total: input + output + cache_read,
+                },
+            ))
+        })?;
+        rows.collect()
+    }
+
     pub fn token_totals_between(
         &self,
         start_unix: i64,
@@ -182,6 +220,42 @@ mod tests {
         }
 
         assert_eq!(ledger.event_count().unwrap(), 5);
+    }
+
+    #[test]
+    fn splits_token_totals_by_provider() {
+        let ledger = Ledger::in_memory().unwrap();
+        // Two claude events + one codex event, all inside the window.
+        ledger.record_event(&sample_event_at("c1", 10)).unwrap();
+        ledger.record_event(&sample_event_at("c2", 11)).unwrap();
+        let mut codex = sample_event_at("x1", 12);
+        codex.provider = "codex_cli".to_string();
+        ledger.record_event(&codex).unwrap();
+
+        let by_provider = ledger.token_totals_between_by_provider(10, 20).unwrap();
+        assert_eq!(
+            by_provider,
+            vec![
+                (
+                    "claude_code".to_string(),
+                    TokenTotals {
+                        input: 200,
+                        output: 100,
+                        cache_read: 0,
+                        total: 300,
+                    }
+                ),
+                (
+                    "codex_cli".to_string(),
+                    TokenTotals {
+                        input: 100,
+                        output: 50,
+                        cache_read: 0,
+                        total: 150,
+                    }
+                ),
+            ]
+        );
     }
 
     #[test]

@@ -32,9 +32,10 @@ impl ClaudeCodeProvider {
     /// persisting its offset/dedup state under the OS data dir convention
     /// with a build-specific Tokengochi namespace.
     pub fn new() -> Self {
-        let root = dirs::home_dir()
-            .map(|home| home.join(".claude").join("projects"))
-            .unwrap_or_else(|| PathBuf::from(".claude/projects"));
+        let root = resolve_claude_root(
+            std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from),
+            dirs::home_dir(),
+        );
 
         let state_path = storage_paths::watcher_data_file("claude_code_watcher_state.json");
 
@@ -52,6 +53,18 @@ impl Default for ClaudeCodeProvider {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Resolves the Claude Code projects directory, honoring the
+/// `CLAUDE_CONFIG_DIR` override (the same env var Claude Code itself reads for
+/// its config root) and falling back to `~/.claude`. Kept pure (takes the env
+/// value + home dir as arguments) so it's unit-testable without mutating
+/// process-global environment state.
+pub(crate) fn resolve_claude_root(config_dir: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
+    config_dir
+        .or_else(|| home.map(|h| h.join(".claude")))
+        .map(|base| base.join("projects"))
+        .unwrap_or_else(|| PathBuf::from(".claude/projects"))
 }
 
 impl TokenProvider for ClaudeCodeProvider {
@@ -368,8 +381,9 @@ fn list_jsonl_files(root: &Path) -> Vec<PathBuf> {
 }
 
 /// Tails one file incrementally against `state`, sending any new events to
-/// `tx` and persisting the updated state. Shared by the initial scan and the
-/// `notify` event loop so both paths behave identically.
+/// `tx` and persisting the updated state. Used only by the live `notify` loop:
+/// the startup pass seeds offsets to the file end instead (see
+/// [`seed_all_to_end`]), so tokens logged before the app opened never count.
 fn tail_file(file: &Path, state: &mut WatcherState, tx: &Sender<TokenEvent>) {
     let offset_before = state.offset_for(file);
     let (lines, new_offset) = match read_new_lines(file, offset_before) {
@@ -397,16 +411,42 @@ fn tail_file(file: &Path, state: &mut WatcherState, tx: &Sender<TokenEvent>) {
     }
 }
 
+/// The startup pass over every existing `*.jsonl` file. Every launch seeds each
+/// file's offset to its current size, so tokens logged before the app opened
+/// (whether on the first-ever run or because the app was closed for a while)
+/// are never counted as food. Only usage appended after launch is tailed live
+/// and converted to food. See `docs/knowledge/token-tracking.md`.
+fn seed_all_to_end(root: &Path, state: &mut WatcherState) {
+    for file in list_jsonl_files(root) {
+        seed_offset_to_end(&file, state);
+    }
+}
+
+/// Advances `state`'s offset for `file` to its current end without emitting any
+/// events, so existing history is skipped. A stat failure is logged and the
+/// file is left unseeded (it would be tailed from the start next time).
+fn seed_offset_to_end(file: &Path, state: &mut WatcherState) {
+    match fs::metadata(file) {
+        Ok(meta) => state.set_offset(file, meta.len()),
+        Err(e) => eprintln!(
+            "claude_code watcher: failed to stat {} for initial seed: {e}",
+            file.display()
+        ),
+    }
+}
+
 /// The actual background loop: initial scan of every existing `*.jsonl`
 /// file, then `notify`-driven incremental tailing as files change.
 fn run_watch_loop(root: PathBuf, state_path: PathBuf, tx: Sender<TokenEvent>) {
     use notify::{Event, RecursiveMode, Watcher};
 
+    // Every launch skips whatever is already in the logs (first run, or usage
+    // logged while the app was closed) by seeding offsets to the file end, so
+    // only tokens produced after the app opens become food. See
+    // docs/knowledge/token-tracking.md.
     let mut state = WatcherState::load(&state_path);
 
-    for file in list_jsonl_files(&root) {
-        tail_file(&file, &mut state, &tx);
-    }
+    seed_all_to_end(&root, &mut state);
     if let Err(e) = state.save(&state_path) {
         eprintln!("claude_code watcher: failed to save state: {e}");
     }
@@ -444,6 +484,8 @@ fn run_watch_loop(root: PathBuf, state_path: PathBuf, tx: Sender<TokenEvent>) {
 
         for file in touched_jsonl {
             if file.is_file() {
+                // Live change observed while the app is running -> real-time,
+                // so the overlay animates the falling food.
                 tail_file(&file, &mut state, &tx);
             }
         }
@@ -586,6 +628,107 @@ mod tests {
         assert_eq!(appended_events[0].message_id, "msg_new");
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn startup_seeds_offset_to_end_and_only_counts_post_launch() {
+        let dir = std::env::temp_dir().join(format!(
+            "tokengochi-startup-test-{}-{}",
+            std::process::id(),
+            now_unix_secs()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("session.jsonl");
+        fs::write(&file, VALID_SESSION).unwrap();
+
+        // Startup: existing history must be skipped (no events), and the offset
+        // seeded to the file's current size.
+        let mut state = WatcherState::default();
+        let (tx, rx) = std::sync::mpsc::channel();
+        seed_all_to_end(&dir, &mut state);
+        let events: Vec<_> = rx.try_iter().collect();
+        assert!(events.is_empty(), "startup must not count history as food");
+        assert_eq!(state.offset_for(&file), fs::metadata(&file).unwrap().len());
+
+        // A line appended after the app opened must be counted (tailed live).
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&file)
+            .unwrap();
+        use std::io::Write;
+        writeln!(
+            f,
+            r#"{{"type":"assistant","message":{{"id":"msg_after_open","usage":{{"input_tokens":7,"output_tokens":2,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}},"timestamp":"2026-07-23T00:00:00Z"}}"#
+        )
+        .unwrap();
+        tail_file(&file, &mut state, &tx);
+        let after: Vec<_> = rx.try_iter().collect();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].message_id, "msg_after_open");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn every_startup_skips_usage_logged_while_closed() {
+        // Not just the first run: a second launch (state already persisted from
+        // an earlier session) must also seed to the current end, so tokens
+        // logged while the app was closed never become food.
+        let dir = std::env::temp_dir().join(format!(
+            "tokengochi-reopen-test-{}-{}",
+            std::process::id(),
+            now_unix_secs()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("session.jsonl");
+        let state_path = dir.join("state.json");
+        fs::write(&file, VALID_SESSION).unwrap();
+
+        // First launch seeds to end and persists.
+        let mut state = WatcherState::load(&state_path);
+        seed_all_to_end(&dir, &mut state);
+        state.save(&state_path).unwrap();
+
+        // Simulate usage while the app is closed: append more assistant lines.
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&file)
+            .unwrap();
+        use std::io::Write;
+        writeln!(
+            f,
+            r#"{{"type":"assistant","message":{{"id":"msg_while_closed","usage":{{"input_tokens":500,"output_tokens":200,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}},"timestamp":"2026-07-23T00:00:00Z"}}"#
+        )
+        .unwrap();
+
+        // Second launch: reload persisted state, seed again -> the while-closed
+        // line is skipped, not counted.
+        let mut reopened = WatcherState::load(&state_path);
+        let (tx, rx) = std::sync::mpsc::channel();
+        seed_all_to_end(&dir, &mut reopened);
+        assert_eq!(reopened.offset_for(&file), fs::metadata(&file).unwrap().len());
+        // Nothing new to tail after seeding to end.
+        tail_file(&file, &mut reopened, &tx);
+        assert_eq!(rx.try_iter().count(), 0, "while-closed usage must be skipped");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn claude_root_honors_env_then_home_then_relative() {
+        let home = PathBuf::from("/home/alice");
+        assert_eq!(
+            resolve_claude_root(Some(PathBuf::from("/custom/claude")), Some(home.clone())),
+            PathBuf::from("/custom/claude/projects"),
+        );
+        assert_eq!(
+            resolve_claude_root(None, Some(home)),
+            PathBuf::from("/home/alice/.claude/projects"),
+        );
+        assert_eq!(
+            resolve_claude_root(None, None),
+            PathBuf::from(".claude/projects"),
+        );
     }
 
     #[test]

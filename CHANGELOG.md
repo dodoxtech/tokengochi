@@ -4,6 +4,22 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-07-23
+
+### Added
+
+- Dashboard now shows today/week token totals broken out per provider (Claude Code, Codex) alongside the combined total.
+- Tray menu gained a "Delete all data & quit…" action that wipes the game database and watcher bookkeeping after confirmation.
+
+### Changed
+
+- Only tokens spent while the app is running are converted into food/XP; usage logged while Tokengochi was closed (including the very first run) is credited to the ledger silently, without spawning falling food or backfill animation.
+- Codex token events now read the real model from the session's `turn_context` record instead of always assuming `gpt-5`.
+- Claude Code and Codex watchers now honor `CLAUDE_CONFIG_DIR` / `CODEX_HOME` overrides instead of hardcoding `~/.claude` and `~/.codex`.
+- Uninstalling (macOS drag-to-Trash flow documented; Windows NSIS uninstaller; Linux `.deb` purge) now removes the app's SQLite database and watcher state, while in-place version updates preserve existing data.
+- The Claude Code notification hook script is now bundled as a Tauri resource and resolved at runtime, fixing "Install hook" failing with a path-not-found error on any downloaded build.
+- macOS release jobs now merge their `darwin-*` platform entries into the published `latest.json` instead of clobbering it, fixing "Check for updates" always failing on macOS.
+
 ## [0.2.6] - 2026-07-16
 
 ### Changed

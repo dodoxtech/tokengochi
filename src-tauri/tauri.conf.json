@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "tokengochi",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "identifier": "com.tokengochi.app",
   "build": {
     "beforeDevCommand": "npm --prefix ui/overlay run build && npm --prefix ui/dashboard run dev",
@@ -54,7 +54,20 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["economy.toml"]
+    "resources": {
+      "economy.toml": "economy.toml",
+      "../resources/claude-hooks/tokengochi-notify.sh": "claude-hooks/tokengochi-notify.sh"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer/windows-hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "postRemoveScript": "installer/deb-postrm.sh"
+      }
+    }
   },
   "plugins": {
     "updater": {

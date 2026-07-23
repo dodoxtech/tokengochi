@@ -177,17 +177,24 @@ export function landingSurfaceAt(x: number, aboveY: number): Segment {
   return candidates[0] ?? segmentById("floor")!;
 }
 
-export function spawnFood(id: string): void {
+// `landed` distinguishes a live reward from a restore. Live food
+// (`food_spawned`) starts above the screen and falls - that drop is the reward
+// feedback. Restored food (existing inventory, incl. usage backfilled from log
+// history) is spawned already on the ground so history never rains food; it
+// just sits there to be eaten. See docs/knowledge/token-tracking.md.
+export function spawnFood(id: string, landed = false): void {
   const targetY = groundY() + PET_SIZE - FOOD_SIZE - 8;
   const minX = 32;
   const maxX = Math.max(minX, window.innerWidth - FOOD_SIZE - 32);
   foods.push({
     id,
     x: clamp(minX + Math.random() * (maxX - minX), minX, maxX),
-    y: -FOOD_SIZE,
+    y: landed ? targetY : -FOOD_SIZE,
     vy: 0,
     targetY,
     eaten: false,
+    // -Infinity so a restored piece shows no landing bounce (it was never in
+    // the air); a live piece gets its real landedAt from the fall physics.
     landedAt: -Infinity,
     bounceHeight: 0,
     bounceDriftX: 0,
@@ -206,10 +213,20 @@ export function pruneEatenFood(): void {
   }
 }
 
+// Upper bound on how many pending-food pieces are shown on screen at once.
+// The inventory count itself is unbounded (a backfill of usage logged while
+// the app was closed can credit hundreds of Food), but materializing all of
+// them as falling pieces would flood the overlay. The true count is still
+// shown numerically in the meter ("N queued"); this only caps the animation.
+const MAX_VISIBLE_FOOD = 12;
+
 export function ensurePendingFoodVisible(): void {
   const visible = foods.filter((food) => !food.eaten).length;
-  for (let i = visible; i < state.pendingFood; i += 1) {
-    spawnFood(`restored-${Date.now()}-${i}`);
+  const target = Math.min(state.pendingFood, MAX_VISIBLE_FOOD);
+  for (let i = visible; i < target; i += 1) {
+    // Restore path: spawn already on the ground (no falling) so pending
+    // inventory - including history-backfilled Food - never rains.
+    spawnFood(`restored-${Date.now()}-${i}`, true);
   }
 }
 

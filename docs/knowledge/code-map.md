@@ -38,6 +38,8 @@ Related: [[architecture|Architecture]] (data flow), [[game-economy|Game Economy]
 | Mood bands / hunger / evolution stage | `src-tauri/src/pet/mod.rs` (`Mood`, `stage_for_level`, `EvolutionBranch`) |
 | Fullness decay, XP, streaks math | `src-tauri/src/economy/*.rs` (see [[game-economy]]) |
 | Persisted pet state (SQLite row) | `src-tauri/src/store/game_state.rs` |
+| Per-provider token stats on the dashboard (Claude vs Codex, not merged) | `src-tauri/src/store/ledger.rs` → `token_totals_between_by_provider()` → `lib.rs` `StatsPayload.{today,week}_tokens_by_provider` → `ui/dashboard/src/routes/+page.svelte` (`TOKEN_PROVIDERS`, `providerTotals()`) |
+| Which log dirs the watchers tail / env overrides (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) | `src-tauri/src/watcher/claude_code.rs` `resolve_claude_root()`, `src-tauri/src/watcher/codex_cli.rs` `resolve_codex_root()`; see [[token-tracking\|Token Tracking]] |
 | Tauri commands callable from the overlay (`pet_ate`, `pet_petted`, ...) | `src-tauri/src/lib.rs` (~L124-373, `#[tauri::command]` fns) |
 | Click-through / hit-testing / window flags | `ui/overlay/src/state.ts` → `isOverPet()`; `ui/overlay/src/input.ts` → `updateHitTest()`; `src-tauri/src/overlay_window.rs` |
 | Climbable window segments (other app windows) | `src-tauri/src/window_geometry/mod.rs` (`enumerate_windows`), emitted as `window_segments_changed` |

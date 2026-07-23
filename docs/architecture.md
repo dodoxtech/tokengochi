@@ -88,6 +88,15 @@ Debug/dev builds intentionally use separate namespaces so `cargo tauri dev` and 
 
 On macOS, `<data_dir>` is `~/Library/Application Support`.
 
+### Uninstall and fresh-install cleanup
+
+Removing the app must also remove its data so a later reinstall starts from an empty database; an in-place **update must never delete data**. Because these directories live outside the bundle, cleanup happens through two independent mechanisms (see [[../src-tauri/src/storage_paths|storage_paths]] `wipe_all_app_data` and `src-tauri/installer/`):
+
+- **In-app uninstall (all platforms).** The tray menu item "Delete all data & quit…" confirms, then wipes both directories via `storage_paths::wipe_all_app_data` and exits. This is the only reliable path on macOS and AppImage, which have no OS-level uninstall hook.
+- **Installer hooks (packaged builds).** Windows NSIS (`installer/windows-hooks.nsh`, `NSIS_HOOK_POSTUNINSTALL`) deletes the data on uninstall but is skipped when the uninstaller runs with the updater's `/UPDATE` flag. The Debian `.deb` `postrm` script (`installer/deb-postrm.sh`) deletes data only on `purge` (never on `upgrade`/`remove`), best-effort across each user's `~/.local/share`.
+
+Both stores open with `CREATE TABLE IF NOT EXISTS`, so any launch after a wipe recreates a fresh schema automatically — no separate first-run initialization is required.
+
 ## Runtime and Deployment
 
 - Targets: Windows 10+ (WebView2), macOS 12+ (WKWebView), Ubuntu 22.04+ (webkit2gtk; X11 fully, Wayland best-effort).

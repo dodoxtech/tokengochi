@@ -409,6 +409,15 @@ impl EconomyState {
         self.fullness = (self.fullness + 2.0).min(100.0);
     }
 
+    /// Empties the uneaten Food queue. Called once on app launch so pending
+    /// Food does not carry across app starts - opening the app never shows
+    /// leftover food on the floor; only usage produced after launch earns Food
+    /// that falls (task 0026 follow-up). Progression (XP, level, streak, ...)
+    /// is untouched; only the queue resets.
+    pub fn clear_pending_food(&mut self) {
+        self.food_inventory = 0;
+    }
+
     /// Call on app launch (and periodically while running) with the current
     /// wall-clock unix time and local calendar date. Applies fullness decay
     /// proportional to real elapsed seconds and rolls day boundaries for any
@@ -691,6 +700,22 @@ mod tests {
         assert_eq!(outcome.food_earned, 0);
         assert_eq!(state.banked_tokens_today, 5_000.0);
         assert_eq!(state.food_inventory, 0);
+    }
+
+    #[test]
+    fn clear_pending_food_empties_queue_but_keeps_progression() {
+        let config = test_config();
+        let mut state = EconomyState::new(day(2026, 1, 1), 0);
+        state.apply_token_event(&huge_event("m1"), &config); // earns 1,500 Food
+        state.xp = 4_321.0;
+        assert_eq!(state.food_inventory, 1_500);
+
+        state.clear_pending_food();
+
+        assert_eq!(state.food_inventory, 0, "queue must be emptied on launch");
+        assert_eq!(state.xp, 4_321.0, "XP/progression must be preserved");
+        // Earned-today stat is a historical count, not the live queue - untouched.
+        assert_eq!(state.food_earned_today, 1_500);
     }
 
     #[test]

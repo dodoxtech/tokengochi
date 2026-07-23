@@ -16,6 +16,7 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
+use tauri::Manager;
 
 /// Substring unique to the managed hook command, used to detect an existing
 /// entry (whether it was installed by this code or copied in by hand from
@@ -47,15 +48,30 @@ pub fn claude_global_settings_path() -> Result<PathBuf, String> {
     Ok(home.join(".claude").join("settings.json"))
 }
 
-/// Resolves the hook script's absolute path relative to this crate's
-/// manifest dir (`src-tauri/../resources/claude-hooks/...`), which covers
-/// running from a source checkout (`cargo run`/`tauri dev`, the only way
-/// this app runs today). Packaging this script as a bundled Tauri resource
-/// (`tauri::path::BaseDirectory::Resource`, like `economy.toml`) is a
-/// follow-up for whenever the app ships to a machine without the repo
-/// present - see the Open Questions in
-/// `docs/knowledge/agent-status-notifications.md`.
-fn hook_script_path() -> Result<PathBuf, String> {
+/// Resolves the hook script's absolute path, preferring the copy bundled as a
+/// Tauri resource (`bundle.resources` in `tauri.conf.json`, mapped to
+/// `claude-hooks/tokengochi-notify.sh`). This is what makes install work in a
+/// packaged/downloaded build, where the source checkout is absent and the
+/// old `CARGO_MANIFEST_DIR` path pointed at the CI build machine.
+///
+/// Falls back to the source-tree copy (`src-tauri/../resources/claude-hooks/`)
+/// for `cargo run`/`tauri dev` when no bundled resource is present.
+fn hook_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if let Ok(path) = app.path().resolve(
+        "claude-hooks/tokengochi-notify.sh",
+        tauri::path::BaseDirectory::Resource,
+    ) {
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    manifest_hook_script_path()
+}
+
+/// Source-checkout location of the hook script, used as a dev/test fallback
+/// when no bundled resource is available. Resolved relative to this crate's
+/// manifest dir, so it only exists when the repo is present.
+fn manifest_hook_script_path() -> Result<PathBuf, String> {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest_dir
         .join("..")
@@ -166,8 +182,12 @@ fn hook_command(script_path: &Path, status: &str) -> String {
         .parent()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_else(|| ".".to_string());
+    // Invoke through `bash` rather than executing the script directly: a
+    // resource copied into a packaged app bundle is not guaranteed to keep
+    // its executable bit, so `'/path/script.sh' ...` could fail with EACCES.
+    // `bash '/path/script.sh' ...` works regardless of the file mode.
     format!(
-        "TOKENGOCHI_DATA_DIR={} {} {status} {MANAGED_FLAG}",
+        "TOKENGOCHI_DATA_DIR={} bash {} {status} {MANAGED_FLAG}",
         shell_quote(&data_dir),
         shell_quote(&script_path.to_string_lossy())
     )
@@ -210,9 +230,9 @@ const MANAGED_HOOKS: [(&str, &str); 4] = [
     ("PermissionDenied", "resolved"),
 ];
 
-pub fn status() -> Result<AgentStatusHookStatus, String> {
+pub fn status(app: &tauri::AppHandle) -> Result<AgentStatusHookStatus, String> {
     let settings_path = claude_global_settings_path()?;
-    let script_path = hook_script_path()?;
+    let script_path = hook_script_path(app)?;
     let root = read_settings(&settings_path)?;
     let installed = root
         .get("hooks")
@@ -232,9 +252,9 @@ pub fn status() -> Result<AgentStatusHookStatus, String> {
     })
 }
 
-pub fn install() -> Result<AgentStatusHookInstallResult, String> {
+pub fn install(app: &tauri::AppHandle) -> Result<AgentStatusHookInstallResult, String> {
     let settings_path = claude_global_settings_path()?;
-    let script_path = hook_script_path()?;
+    let script_path = hook_script_path(app)?;
     let mut root = read_settings(&settings_path)?;
 
     let hooks = root.entry("hooks".to_string()).or_insert_with(|| json!({}));
@@ -294,7 +314,7 @@ mod tests {
 
     #[test]
     fn hook_script_resolves_to_an_existing_file() {
-        let path = hook_script_path().expect("hook script should resolve");
+        let path = manifest_hook_script_path().expect("hook script should resolve");
         assert!(path.is_file());
         assert!(path.to_string_lossy().contains(HOOK_MARKER));
     }
@@ -313,7 +333,7 @@ mod tests {
         )
         .unwrap();
 
-        let script_path = hook_script_path().unwrap();
+        let script_path = manifest_hook_script_path().unwrap();
         let mut root = read_settings(&settings_path).unwrap();
         let hooks = root.entry("hooks".to_string()).or_insert_with(|| json!({}));
         let hooks_obj = hooks.as_object_mut().unwrap();
@@ -369,7 +389,7 @@ mod tests {
         // `PermissionRequest`. Installing again should remove the stale
         // Notification entry (it fires on idle-waiting too, so leaving it
         // would double up on spurious badges) and add PermissionRequest.
-        let script_path = hook_script_path().unwrap();
+        let script_path = manifest_hook_script_path().unwrap();
         let mut root: Map<String, Value> = Map::new();
         let hooks_obj = root
             .entry("hooks".to_string())

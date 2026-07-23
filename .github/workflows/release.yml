@@ -293,13 +293,20 @@ jobs:
           xcrun stapler validate "$MACOS_DMG_PATH"
           spctl --assess --type install --verbose "$MACOS_DMG_PATH"
 
-      - name: Upload macOS release assets
+      - name: Upload macOS binary assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
           bundle_root="src-tauri/target/${{ matrix.target }}/release/bundle"
+          # NOTE: latest.json is handled by the separate merge step below, not
+          # here. Each build job (windows, linux, and each macOS arch) produces
+          # its own single-platform latest.json; a plain `--clobber` upload
+          # would overwrite the others, which is exactly how the macOS
+          # (`darwin-*`) entries went missing from the published manifest and
+          # broke "Check for updates" on macOS. The assets below all have
+          # arch-unique names, so uploading them with --clobber is safe.
           release_assets=()
           while IFS= read -r asset; do
             release_assets+=("$asset")
@@ -307,11 +314,10 @@ jobs:
             -name '*.dmg' \
             -o -name '*.app.tar.gz' \
             -o -name '*.app.tar.gz.sig' \
-            -o -name 'latest.json' \
           \) -print)
 
           if [ "${#release_assets[@]}" -eq 0 ]; then
-            echo "::error::No macOS release assets were found under $bundle_root."
+            echo "::error::No macOS binary assets were found under $bundle_root."
             find "$bundle_root" -maxdepth 4 -print
             exit 1
           fi
@@ -325,6 +331,64 @@ jobs:
               gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null
           fi
 
-          printf 'Uploading macOS assets:\n'
+          printf 'Uploading macOS binary assets:\n'
           printf ' - %s\n' "${release_assets[@]}"
           gh release upload "$GITHUB_REF_NAME" "${release_assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Merge macOS platforms into updater manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          bundle_root="src-tauri/target/${{ matrix.target }}/release/bundle"
+          local_latest="$(find "$bundle_root" -type f -name 'latest.json' | head -n 1)"
+          if [ -z "$local_latest" ] || [ ! -f "$local_latest" ]; then
+            echo "::error::No macOS latest.json was found under $bundle_root."
+            find "$bundle_root" -maxdepth 4 -print
+            exit 1
+          fi
+
+          # The windows/linux jobs (via tauri-action) and the sibling macOS arch
+          # job all write the same `latest.json` asset concurrently. There is no
+          # atomic compare-and-swap on release assets, so instead we converge:
+          # download whatever is currently published, union its `platforms` with
+          # ours, re-upload, then verify our platform keys survived. If a
+          # concurrent writer clobbered us in between, we loop and merge again.
+          # The platform set only ever grows, so this terminates once every
+          # writer has seen its own entries land.
+          merge_script=".github/scripts/merge-updater-manifest.py"
+          for attempt in $(seq 1 8); do
+            remote_latest="$RUNNER_TEMP/remote-latest.json"
+            rm -f "$remote_latest"
+            if gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --pattern latest.json --output "$remote_latest" --clobber 2>/dev/null; then
+              echo "Merging into existing published latest.json (attempt $attempt)."
+            else
+              echo "No published latest.json yet; starting from the macOS build (attempt $attempt)."
+              cp "$local_latest" "$remote_latest"
+            fi
+
+            merged="$RUNNER_TEMP/merged-latest.json"
+            python3 "$merge_script" merge "$remote_latest" "$local_latest" "$merged"
+
+            gh release upload "$GITHUB_REF_NAME" "$merged#latest.json" \
+              --clobber --repo "$GITHUB_REPOSITORY"
+
+            # Verify our platform keys survived a possible concurrent upload.
+            verify_latest="$RUNNER_TEMP/verify-latest.json"
+            rm -f "$verify_latest"
+            gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --pattern latest.json --output "$verify_latest" --clobber
+
+            if python3 "$merge_script" verify "$verify_latest" "$local_latest"; then
+              echo "macOS platforms present in published latest.json."
+              exit 0
+            fi
+
+            echo "A concurrent upload clobbered our platforms; retrying merge (attempt $attempt)."
+            sleep $((attempt * 5))
+          done
+
+          echo "::error::Could not get macOS platforms to stick in latest.json after retries."
+          exit 1

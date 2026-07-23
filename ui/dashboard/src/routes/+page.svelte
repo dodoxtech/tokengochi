@@ -50,16 +50,39 @@
     agentStatusNotificationsEnabled: boolean;
   };
   type TokenTotals = { input: number; output: number; cacheRead: number; total: number };
+  // Per-provider breakdown keyed by provider id ("claude_code", "codex_cli", ...).
+  // Providers with no usage in the window are absent from the map.
+  type TokensByProvider = Record<string, TokenTotals>;
   type FoodStats = { today: number; week: number };
   type ShopItem = { id: string; label: string; kind: "Cosmetic" | "FoodSkin" | "Furniture"; priceSparks: number };
   type DashboardState = {
     pet: PetState;
     settings: AppSettings;
     providers: { claudeCodeDetected: boolean; codexCliDetected: boolean; openaiKeyConfigured: boolean };
-    stats: { food: FoodStats; todayTokens: TokenTotals; weekTokens: TokenTotals; streakDays: number };
+    stats: {
+      food: FoodStats;
+      todayTokens: TokenTotals;
+      weekTokens: TokenTotals;
+      todayTokensByProvider: TokensByProvider;
+      weekTokensByProvider: TokensByProvider;
+      streakDays: number;
+    };
     monitorCount: number;
     shopCatalog: ShopItem[];
   };
+
+  const ZERO_TOTALS: TokenTotals = { input: 0, output: 0, cacheRead: 0, total: 0 };
+
+  // Providers shown as their own token cards, in display order. OpenAI/manual
+  // usage still counts toward the combined totals but isn't broken out here.
+  const TOKEN_PROVIDERS = [
+    { id: "claude_code", label: "Claude" },
+    { id: "codex_cli", label: "Codex" },
+  ] as const;
+
+  function providerTotals(map: TokensByProvider | undefined, id: string): TokenTotals {
+    return map?.[id] ?? ZERO_TOTALS;
+  }
 
   const starterEggs = [
     { id: "sprout", label: "Sprout", tone: "#a7f070" },
@@ -368,16 +391,13 @@
           <strong>{dashboard.stats.food.week}</strong>
           <small>{dashboard.stats.streakDays} day streak</small>
         </article>
-        <article>
-          <span>Today Tokens</span>
-          <strong>{formatNumber(dashboard.stats.todayTokens.total)}</strong>
-          <small>{formatNumber(dashboard.stats.todayTokens.output)} output</small>
-        </article>
-        <article>
-          <span>Week Tokens</span>
-          <strong>{formatNumber(dashboard.stats.weekTokens.total)}</strong>
-          <small>{formatNumber(dashboard.stats.weekTokens.cacheRead)} cache</small>
-        </article>
+        {#each TOKEN_PROVIDERS as provider}
+          <article>
+            <span>{provider.label} Tokens</span>
+            <strong>{formatNumber(providerTotals(dashboard.stats.todayTokensByProvider, provider.id).total)}</strong>
+            <small>today · {formatNumber(providerTotals(dashboard.stats.weekTokensByProvider, provider.id).total)} this week</small>
+          </article>
+        {/each}
         <article>
           <span>Pending Food</span>
           <strong>{dashboard.pet.pendingFood}</strong>

@@ -16,6 +16,7 @@ use pet::{
     EvolutionBranch, EvolutionEvent, EvolutionStage, FurniturePlacement, ShopItem,
     UsagePatternSample, SHOP_CATALOG,
 };
+use std::collections::BTreeMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc, Mutex,
@@ -127,6 +128,12 @@ struct StatsPayload {
     food: FoodStats,
     today_tokens: TokenTotals,
     week_tokens: TokenTotals,
+    /// Per-provider breakdown of `today_tokens` / `week_tokens`, keyed by the
+    /// provider id (`"claude_code"`, `"codex_cli"`, ...), so the dashboard can
+    /// show each provider's usage separately instead of one merged total.
+    /// Providers with no usage in the window are absent.
+    today_tokens_by_provider: BTreeMap<String, TokenTotals>,
+    week_tokens_by_provider: BTreeMap<String, TokenTotals>,
     streak_days: u32,
 }
 
@@ -297,15 +304,19 @@ fn is_autostart_enabled(app: AppHandle) -> Result<bool, String> {
 /// `~/.claude/settings.json`, without writing anything - see
 /// `claude_hooks.rs` and `docs/knowledge/agent-status-notifications.md`.
 #[tauri::command]
-fn agent_status_hook_status() -> Result<claude_hooks::AgentStatusHookStatus, String> {
-    claude_hooks::status()
+fn agent_status_hook_status(
+    app: AppHandle,
+) -> Result<claude_hooks::AgentStatusHookStatus, String> {
+    claude_hooks::status(&app)
 }
 
 /// Installs those hooks if they're missing (idempotent - safe to call
 /// repeatedly, e.g. from a dashboard button).
 #[tauri::command]
-fn install_agent_status_hooks() -> Result<claude_hooks::AgentStatusHookInstallResult, String> {
-    claude_hooks::install()
+fn install_agent_status_hooks(
+    app: AppHandle,
+) -> Result<claude_hooks::AgentStatusHookInstallResult, String> {
+    claude_hooks::install(&app)
 }
 
 #[tauri::command]
@@ -552,6 +563,18 @@ fn dashboard_payload(app: &AppHandle, runtime: &GameRuntime) -> Result<Dashboard
                 .ledger
                 .token_totals_between(week_start_unix, tomorrow_start_unix)
                 .map_err(|err| err.to_string())?,
+            today_tokens_by_provider: runtime
+                .ledger
+                .token_totals_between_by_provider(today_start_unix, tomorrow_start_unix)
+                .map_err(|err| err.to_string())?
+                .into_iter()
+                .collect(),
+            week_tokens_by_provider: runtime
+                .ledger
+                .token_totals_between_by_provider(week_start_unix, tomorrow_start_unix)
+                .map_err(|err| err.to_string())?
+                .into_iter()
+                .collect(),
             streak_days: runtime.economy.streak_days,
         },
         monitor_count: available_monitor_count(app),
@@ -795,6 +818,7 @@ fn start_openai_watcher(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -814,6 +838,12 @@ pub fn run() {
                 .load_economy_state()?
                 .unwrap_or_else(|| EconomyState::new(today, now_unix));
             economy.reconcile_elapsed_time(now_unix, today, &config);
+            // Fresh food slate on every launch: the uneaten Food queue does not
+            // carry across app starts, so opening the app never shows leftover
+            // food on the floor. Only usage produced after launch earns Food
+            // that falls (see docs/knowledge/token-tracking.md). XP/level and
+            // other progression are preserved.
+            economy.clear_pending_food();
             state_store.save_economy_state(&economy, now_unix)?;
             state_store.save_app_settings(&settings, now_unix)?;
 
