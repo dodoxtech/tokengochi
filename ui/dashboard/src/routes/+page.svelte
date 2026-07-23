@@ -84,6 +84,39 @@
     return map?.[id] ?? ZERO_TOTALS;
   }
 
+  // Per-provider state helpers so the token stat cards and the "Token sources"
+  // panel stay in sync from a single source of truth. "Detected" means the
+  // tool's logs/key exist on this machine; "tracking" means the user opted in
+  // to counting them. A card showing 0 while detected-but-untracked is the
+  // exact confusion these helpers exist to surface and fix inline.
+  function providerDetected(id: string): boolean {
+    if (!dashboard) return false;
+    if (id === "claude_code") return dashboard.providers.claudeCodeDetected;
+    if (id === "codex_cli") return dashboard.providers.codexCliDetected;
+    if (id === "openai") return dashboard.providers.openaiKeyConfigured;
+    return false;
+  }
+  function providerTrackingEnabled(id: string): boolean {
+    if (!dashboard) return false;
+    if (id === "claude_code") return dashboard.settings.claudeCodeEnabled;
+    if (id === "codex_cli") return dashboard.settings.codexCliEnabled;
+    if (id === "openai") return dashboard.settings.openaiEnabled;
+    return false;
+  }
+  function toggleProvider(id: string) {
+    if (!dashboard) return;
+    if (id === "claude_code") void patchSettings({ claudeCodeEnabled: !dashboard.settings.claudeCodeEnabled });
+    else if (id === "codex_cli") void patchSettings({ codexCliEnabled: !dashboard.settings.codexCliEnabled });
+    else if (id === "openai") void patchSettings({ openaiEnabled: !dashboard.settings.openaiEnabled });
+  }
+
+  // Providers that get a full row in the Token sources panel, in display order.
+  const SOURCE_PROVIDERS = [
+    { id: "claude_code", label: "Claude Code", detail: "Reads ~/.claude session logs" },
+    { id: "codex_cli", label: "Codex CLI", detail: "Reads ~/.codex session logs" },
+    { id: "openai", label: "OpenAI Usage API", detail: "Polls the OpenAI usage endpoint" },
+  ] as const;
+
   const starterEggs = [
     { id: "sprout", label: "Sprout", tone: "#a7f070" },
     { id: "ember", label: "Ember", tone: "#ef7d57" },
@@ -445,10 +478,20 @@
           <small>{dashboard.stats.streakDays} day streak</small>
         </article>
         {#each TOKEN_PROVIDERS as provider}
-          <article>
+          {@const detected = providerDetected(provider.id)}
+          {@const enabled = providerTrackingEnabled(provider.id)}
+          <article class:muted={!enabled || !detected}>
             <span>{provider.label} Tokens</span>
             <strong>{formatNumber(providerTotals(dashboard.stats.todayTokensByProvider, provider.id).total)}</strong>
-            <small>today · {formatNumber(providerTotals(dashboard.stats.weekTokensByProvider, provider.id).total)} this week</small>
+            {#if !detected}
+              <small class="stat-note">Not found on this Mac</small>
+            {:else if !enabled}
+              <button class="stat-action" onclick={() => toggleProvider(provider.id)}>
+                Tracking off — turn on
+              </button>
+            {:else}
+              <small>today · {formatNumber(providerTotals(dashboard.stats.weekTokensByProvider, provider.id).total)} this week</small>
+            {/if}
           </article>
         {/each}
         <article>
@@ -546,41 +589,58 @@
       </section>
       -->
 
-      <section class="panel settings">
+      <section class="panel sources">
         <div class="section-title">
           <div>
-            <p class="eyebrow">Settings</p>
-            <h2>App controls</h2>
+            <p class="eyebrow">Token sources</p>
+            <h2>What feeds your pet</h2>
           </div>
-          <span class:online={dashboard.providers.claudeCodeDetected}>
-            Claude Code {dashboard.providers.claudeCodeDetected ? "ready" : "missing"}
-          </span>
+          <label class="pause-toggle" class:paused={dashboard.settings.trackingPaused}>
+            <input
+              type="checkbox"
+              checked={dashboard.settings.trackingPaused}
+              onchange={() => patchSettings({ trackingPaused: !dashboard ? false : !dashboard.settings.trackingPaused })}
+            />
+            <span>{dashboard.settings.trackingPaused ? "Paused" : "Pause all"}</span>
+          </label>
         </div>
+        <p class="section-hint">
+          Turn on a tool to count its tokens as food. Only usage produced <strong>after</strong>
+          Tokengochi is open counts — run a new turn to see the numbers move.
+        </p>
 
-        <label class="toggle">
-          <input
-            type="checkbox"
-            checked={dashboard.settings.claudeCodeEnabled}
-            onchange={() => patchSettings({ claudeCodeEnabled: !dashboard?.settings.claudeCodeEnabled })}
-          />
-          <span>Track Claude Code</span>
-        </label>
-        <label class="toggle">
-          <input
-            type="checkbox"
-            checked={dashboard.settings.codexCliEnabled}
-            onchange={() => patchSettings({ codexCliEnabled: !dashboard?.settings.codexCliEnabled })}
-          />
-          <span>Track Codex CLI {dashboard.providers.codexCliDetected ? "" : "(not detected)"}</span>
-        </label>
-        <label class="toggle">
-          <input
-            type="checkbox"
-            checked={dashboard.settings.openaiEnabled}
-            onchange={() => patchSettings({ openaiEnabled: !dashboard?.settings.openaiEnabled })}
-          />
-          <span>Track OpenAI Usage API {dashboard.providers.openaiKeyConfigured ? "" : "(key needed)"}</span>
-        </label>
+        {#each SOURCE_PROVIDERS as source}
+          {@const detected = providerDetected(source.id)}
+          {@const enabled = providerTrackingEnabled(source.id)}
+          <div class="source-row" class:on={enabled && detected}>
+            <div class="source-main">
+              <span class="source-name">{source.label}</span>
+              <span class="source-detail">{source.detail}</span>
+            </div>
+            <span
+              class="source-status"
+              class:ok={detected}
+              class:enabled-counting={enabled && detected}
+            >
+              {#if !detected}
+                {source.id === "openai" ? "Key needed" : "Not found"}
+              {:else if enabled}
+                Counting
+              {:else}
+                Detected
+              {/if}
+            </span>
+            <label class="switch" aria-label={`Track ${source.label}`}>
+              <input
+                type="checkbox"
+                checked={enabled}
+                onchange={() => toggleProvider(source.id)}
+              />
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+            </label>
+          </div>
+        {/each}
+
         <div class="field openai-key">
           <span>OpenAI key</span>
           <input
@@ -594,34 +654,19 @@
             <button class="ghost" onclick={clearOpenAiKey}>Clear</button>
           </div>
         </div>
-        <label class="toggle">
-          <input
-            type="checkbox"
-            checked={!dashboard.settings.trackingPaused}
-            onchange={() => patchSettings({ trackingPaused: !dashboard ? false : !dashboard.settings.trackingPaused })}
-          />
-          <span>Tracking active</span>
-        </label>
-        <label class="toggle">
-          <input type="checkbox" checked={autostart} onchange={toggleAutostart} />
-          <span>Launch at sign in</span>
-        </label>
-        <label class="toggle">
-          <input
-            type="checkbox"
-            checked={dashboard.settings.waylandFallback}
-            onchange={() => patchSettings({ waylandFallback: !dashboard?.settings.waylandFallback })}
-          />
-          <span>Wayland fallback window</span>
-        </label>
-        <label class="toggle">
-          <input
-            type="checkbox"
-            checked={dashboard.settings.calmMode}
-            onchange={() => patchSettings({ calmMode: !dashboard?.settings.calmMode })}
-          />
-          <span>Calm mode (disable climbing &amp; idle gags)</span>
-        </label>
+      </section>
+
+      <section class="panel settings">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">Pet reactions</p>
+            <h2>Optional live badges</h2>
+          </div>
+        </div>
+        <p class="section-hint">
+          Independent of token counting — these let the pet show a badge when an agent
+          finishes a turn or needs your approval. Skip them if you only want token tracking.
+        </p>
         <label class="toggle">
           <input
             type="checkbox"
@@ -708,6 +753,36 @@
             <small class="error">{codexHookCheckError}</small>
           {/if}
         </div>
+      </section>
+
+      <section class="panel settings">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">Settings</p>
+            <h2>App controls</h2>
+          </div>
+        </div>
+
+        <label class="toggle">
+          <input type="checkbox" checked={autostart} onchange={toggleAutostart} />
+          <span>Launch at sign in</span>
+        </label>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={dashboard.settings.calmMode}
+            onchange={() => patchSettings({ calmMode: !dashboard?.settings.calmMode })}
+          />
+          <span>Calm mode (disable climbing &amp; idle gags)</span>
+        </label>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={dashboard.settings.waylandFallback}
+            onchange={() => patchSettings({ waylandFallback: !dashboard?.settings.waylandFallback })}
+          />
+          <span>Wayland fallback window</span>
+        </label>
 
         <label class="field">
           <span>Pet size</span>
@@ -904,6 +979,131 @@
   .field small {
     color: #aebbd1;
   }
+  article.muted {
+    opacity: 0.72;
+  }
+  article.muted strong {
+    color: #6d7d99;
+  }
+  .stat-note {
+    color: #8da1c5;
+    font-size: 12px;
+  }
+  .stat-action {
+    background: none;
+    border: 0;
+    color: #f2c94c;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+    justify-self: start;
+    padding: 0;
+    text-align: left;
+  }
+  .stat-action:hover {
+    text-decoration: underline;
+  }
+  /* Token sources panel */
+  .sources {
+    display: grid;
+    gap: 12px;
+  }
+  .section-hint {
+    color: #aebbd1;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-top: -2px;
+  }
+  .section-hint strong {
+    color: #f5f7ff;
+  }
+  .pause-toggle {
+    align-items: center;
+    color: #aebbd1;
+    display: inline-flex;
+    font-size: 13px;
+    font-weight: 700;
+    gap: 8px;
+  }
+  .pause-toggle.paused {
+    color: #f2c94c;
+  }
+  .source-row {
+    align-items: center;
+    background: #121b2b;
+    border: 1px solid #26354d;
+    border-radius: 8px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 1fr auto auto;
+    min-height: 56px;
+    padding: 10px 14px;
+  }
+  .source-row.on {
+    border-color: #3a5a3a;
+  }
+  .source-main {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+  .source-name {
+    font-weight: 700;
+  }
+  .source-detail {
+    color: #8da1c5;
+    font-size: 12px;
+  }
+  .source-status {
+    color: #ef7d57;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .source-status.ok {
+    color: #8da1c5;
+  }
+  .source-status.enabled-counting {
+    color: #a7f070;
+  }
+  /* iOS-style switch */
+  .switch {
+    cursor: pointer;
+    display: inline-flex;
+  }
+  .switch input {
+    height: 0;
+    opacity: 0;
+    position: absolute;
+    width: 0;
+  }
+  .switch-track {
+    background: #2a3851;
+    border-radius: 999px;
+    display: inline-block;
+    height: 24px;
+    position: relative;
+    transition: background 0.15s ease;
+    width: 42px;
+  }
+  .switch-thumb {
+    background: #f5f7ff;
+    border-radius: 50%;
+    height: 18px;
+    left: 3px;
+    position: absolute;
+    top: 3px;
+    transition: transform 0.15s ease;
+    width: 18px;
+  }
+  .switch input:checked + .switch-track {
+    background: #a7f070;
+  }
+  .switch input:checked + .switch-track .switch-thumb {
+    transform: translateX(18px);
+  }
+  .switch input:focus-visible + .switch-track {
+    box-shadow: 0 0 0 2px color-mix(in srgb, #a7f070, transparent 55%);
+  }
   button,
   select {
     border: 0;
@@ -958,15 +1158,13 @@
     border-radius: 50% 50% 46% 46%;
     background: var(--tone);
   }
-  .detect,
-  .section-title > span {
+  .detect {
     color: #aebbd1;
     display: flex;
     align-items: center;
     gap: 8px;
   }
-  .detect span,
-  .section-title > span::before {
+  .detect span {
     background: #ef7d57;
     border-radius: 999px;
     content: "";
@@ -974,8 +1172,7 @@
     height: 9px;
     width: 9px;
   }
-  .detect span.online,
-  .section-title > span.online::before {
+  .detect span.online {
     background: #a7f070;
   }
   .settings {
@@ -1146,6 +1343,12 @@
     }
     .field {
       grid-template-columns: 1fr;
+    }
+    .source-row {
+      grid-template-columns: 1fr auto;
+    }
+    .source-status {
+      grid-column: 1 / -1;
     }
   }
 </style>

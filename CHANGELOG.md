@@ -4,10 +4,16 @@ All notable changes to Tokengochi are documented here. Format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-07-23
+
 ### Added
 
 - The dashboard can now auto-install/remove agent-status hooks for Codex CLI (`~/.codex/hooks.json`), mirroring the existing Claude Code integration, so the pet reacts to Codex turn-completed/needs-approval events too. The "Pet reacts to Claude status" toggle is renamed "Pet reacts to agent status" since it now gates both providers. See task 0027.
 - The Claude Code agent-status hook can now be removed from the dashboard, not just installed (a "Remove hook" button next to the existing "Install hook" one).
+
+### Changed
+
+- Reworked the dashboard settings for clarity around which tools actually feed the pet. Per-provider tracking now lives in a dedicated "Token sources" panel with detection status pills (`Not found` / `Detected` / `Counting`) and toggle switches, separated from the unrelated agent-status hooks (now under "Pet reactions") and general app controls. Each provider token stat card is now self-explanatory: a detected-but-untracked provider shows an inline "Tracking off — turn on" action right where its `0` appears, and an undetected one says "Not found on this Mac". This removes the earlier confusion where a tool's tokens silently counted as `0` with no indication that its tracking toggle was off.
 
 ### Fixed
 
